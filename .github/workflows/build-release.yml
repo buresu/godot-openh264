@@ -1,0 +1,108 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.config }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - platform: linux
+            arch: x86_64
+            config: debug
+            runner: ubuntu-22.04
+          - platform: linux
+            arch: x86_64
+            config: release
+            runner: ubuntu-22.04
+
+          # Linux arm64
+          - platform: linux
+            arch: arm64
+            config: debug
+            runner: ubuntu-22.04-arm
+          - platform: linux
+            arch: arm64
+            config: release
+            runner: ubuntu-22.04-arm
+
+          # Windows x86_64
+          - platform: windows
+            arch: x86_64
+            config: debug
+            runner: windows-latest
+          - platform: windows
+            arch: x86_64
+            config: release
+            runner: windows-latest
+
+          # macOS arm64 only
+          - platform: macos
+            arch: arm64
+            config: debug
+            runner: macos-latest
+            cmake_extra: "-DCMAKE_OSX_ARCHITECTURES=arm64"
+          - platform: macos
+            arch: arm64
+            config: release
+            runner: macos-latest
+            cmake_extra: "-DCMAKE_OSX_ARCHITECTURES=arm64"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=${{ matrix.config == 'release' && 'Release' || 'Debug' }} \
+            -DGODOT_ARCH=${{ matrix.arch }} \
+            ${{ matrix.cmake_extra || '' }}
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.config == 'release' && 'Release' || 'Debug' }} --parallel
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-openh264-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.config }}
+          path: demo/addons/godot-openh264/bin/
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Assemble addon zip
+        run: |
+          mkdir -p release/addons/godot-openh264/bin
+          cp demo/addons/godot-openh264/godot-openh264.gdextension \
+             release/addons/godot-openh264/
+          find artifacts/ -type f | xargs -I{} cp {} release/addons/godot-openh264/bin/
+          cd release
+          zip -r ../godot-openh264-${{ github.ref_name }}.zip addons/
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: godot-openh264-${{ github.ref_name }}.zip
+          generate_release_notes: true

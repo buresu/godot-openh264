@@ -1,0 +1,9 @@
+build/
+.cache/
+*.so
+*.dll
+*.dylib
+demo/addons/godot-openh264/bin/*.so
+demo/addons/godot-openh264/bin/*.dll
+demo/addons/godot-openh264/bin/*.dylib
+demo/.godot/

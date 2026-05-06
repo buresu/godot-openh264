@@ -1,0 +1,14 @@
+[submodule "lib/godot-cpp"]
+	path = lib/godot-cpp
+	url = https://github.com/godotengine/godot-cpp.git
+	branch = 4.3
+[submodule "lib/minimp4"]
+	path = lib/minimp4
+	url = https://github.com/lieff/minimp4.git
+[submodule "lib/openh264"]
+	path = lib/openh264
+	url = https://github.com/cisco/openh264.git
+	branch = openh264v2.4.1
+[submodule "lib/bzip2"]
+	path = lib/bzip2
+	url = https://gitlab.com/bzip2/bzip2.git
