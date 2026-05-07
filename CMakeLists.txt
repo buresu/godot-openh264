@@ -40,7 +40,7 @@ add_library(GodotOpenH264 SHARED ${SOURCES} ${INCLUDES})
 
 set_target_properties(GodotOpenH264 PROPERTIES
     PREFIX "lib"
-    OUTPUT_NAME "godot-hap.$<IF:$<PLATFORM_ID:Windows>,windows,$<IF:$<PLATFORM_ID:Darwin>,macos,linux>>.$<IF:$<CONFIG:Debug>,debug,release>.${ARCH}"
+    OUTPUT_NAME "godot-openh264.$<IF:$<PLATFORM_ID:Windows>,windows,$<IF:$<PLATFORM_ID:Darwin>,macos,linux>>.$<IF:$<CONFIG:Debug>,debug,release>.${ARCH}"
 )
 
 target_include_directories(GodotOpenH264 PRIVATE
