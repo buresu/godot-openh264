@@ -59,7 +59,11 @@ void OpenH264Loader::_bind_methods() {
 
 String OpenH264Loader::_get_lib_filename() const {
 #if defined(_WIN32)
+#  if defined(__aarch64__)
+    return String("openh264-") + OPENH264_VERSION + "-arm64.dll";
+#  else
     return String("openh264-") + OPENH264_VERSION + "-win64.dll";
+#  endif
 #elif defined(__APPLE__)
     return String("libopenh264-") + OPENH264_VERSION + "-mac-arm64.dylib";
 #else
