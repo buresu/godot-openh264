@@ -14,6 +14,21 @@ namespace godot {
 class OpenH264Loader : public RefCounted {
     GDCLASS(OpenH264Loader, RefCounted)
 
+public:
+    FnWelsCreateDecoder  _fn_create_decoder  = nullptr;
+    FnWelsDestroyDecoder _fn_destroy_decoder = nullptr;
+
+    static OpenH264Loader *get_singleton();
+
+    OpenH264Loader();
+    ~OpenH264Loader() override;
+
+    bool is_loaded() const { return _lib_handle != nullptr; }
+
+protected:
+    static void _bind_methods();
+
+private:
     static constexpr const char *OPENH264_VERSION = "2.6.0";
 
     static OpenH264Loader *_singleton;
@@ -41,20 +56,6 @@ class OpenH264Loader : public RefCounted {
     Error  _load_library();
     void   _on_load_complete(int error);
     void  *_get_proc(const String &name) const;
-
-protected:
-    static void _bind_methods();
-
-public:
-    FnWelsCreateDecoder  _fn_create_decoder  = nullptr;
-    FnWelsDestroyDecoder _fn_destroy_decoder = nullptr;
-
-    static OpenH264Loader *get_singleton();
-
-    OpenH264Loader();
-    ~OpenH264Loader() override;
-
-    bool is_loaded() const { return _lib_handle != nullptr; }
 };
 
 } // namespace godot

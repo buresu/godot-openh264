@@ -10,11 +10,6 @@
 namespace godot {
 
 class OpenH264Decoder {
-    ISVCDecoder *_decoder = nullptr;
-
-    Ref<Image> _yuv420_to_image(const SBufferInfo &buf_info,
-                                uint8_t *const *yuv_planes) const;
-
 public:
     OpenH264Decoder()  = default;
     ~OpenH264Decoder() = default;
@@ -25,6 +20,12 @@ public:
     void       uninit();
 
     bool is_initialized() const { return _decoder != nullptr; }
+
+private:
+    ISVCDecoder *_decoder = nullptr;
+
+    Ref<Image> _yuv420_to_image(const SBufferInfo &buf_info,
+                                uint8_t *const *yuv_planes) const;
 };
 
 } // namespace godot

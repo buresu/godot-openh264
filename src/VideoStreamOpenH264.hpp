@@ -10,11 +10,11 @@ class VideoStreamPlaybackOpenH264;
 class VideoStreamOpenH264 : public VideoStream {
     GDCLASS(VideoStreamOpenH264, VideoStream)
 
-protected:
-    static void _bind_methods();
-
 public:
     Ref<VideoStreamPlayback> _instantiate_playback() override;
+
+protected:
+    static void _bind_methods();
 };
 
 } // namespace godot

@@ -17,6 +17,31 @@ namespace godot {
 class VideoStreamPlaybackOpenH264 : public VideoStreamPlayback {
     GDCLASS(VideoStreamPlaybackOpenH264, VideoStreamPlayback)
 
+public:
+    VideoStreamPlaybackOpenH264();
+    ~VideoStreamPlaybackOpenH264() override;
+
+    void set_file(const String &p_file);
+
+    void   _play() override;
+    void   _stop() override;
+    bool   _is_playing() const override;
+    void   _set_paused(bool p_paused) override;
+    bool   _is_paused() const override;
+    double _get_length() const override;
+    double _get_playback_position() const override;
+    void   _seek(double p_time) override;
+    void   _update(double p_delta) override;
+    int    _get_channels() const override { return 0; }
+    int    _get_mix_rate() const override { return 0; }
+    Ref<Texture2D> _get_texture() const override;
+
+protected:
+    static void _bind_methods();
+
+private:
+    static constexpr uint8_t START_CODE[4] = { 0x00, 0x00, 0x00, 0x01 };
+
     MP4D_demux_t    _mp4{};
     bool            _mp4_open      = false;
     int             _track_idx     = -1;
@@ -38,36 +63,12 @@ class VideoStreamPlaybackOpenH264 : public VideoStreamPlayback {
     Ref<Image>        _pending_frame;
     bool              _texture_initialized = false;
 
-    static constexpr uint8_t START_CODE[4] = { 0x00, 0x00, 0x00, 0x01 };
-
     static int _mp4_read_cb(int64_t offset, void *buf, size_t size, void *token);
 
     bool _open_file();
     void _close_file();
     void _send_sps_pps();
     void _advance_frame();
-
-protected:
-    static void _bind_methods();
-
-public:
-    VideoStreamPlaybackOpenH264();
-    ~VideoStreamPlaybackOpenH264() override;
-
-    void set_file(const String &p_file);
-
-    void   _play() override;
-    void   _stop() override;
-    bool   _is_playing() const override;
-    void   _set_paused(bool p_paused) override;
-    bool   _is_paused() const override;
-    double _get_length() const override;
-    double _get_playback_position() const override;
-    void   _seek(double p_time) override;
-    void   _update(double p_delta) override;
-    int    _get_channels() const override { return 0; }
-    int    _get_mix_rate() const override { return 0; }
-    Ref<Texture2D> _get_texture() const override;
 };
 
 } // namespace godot
