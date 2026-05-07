@@ -22,31 +22,27 @@
 
 using namespace godot;
 
-OpenH264Loader *OpenH264Loader::singleton = nullptr;
-
-// ---------------------------------------------------------------------------
-// Lifecycle
-// ---------------------------------------------------------------------------
+OpenH264Loader *OpenH264Loader::_singleton = nullptr;
 
 OpenH264Loader::OpenH264Loader() {
-    singleton = this;
+    _singleton = this;
     _start_background_load();
 }
 
 OpenH264Loader::~OpenH264Loader() {
-    if (lib_handle) {
+    if (_lib_handle) {
 #if defined(_WIN32)
-        FreeLibrary(static_cast<HMODULE>(lib_handle));
+        FreeLibrary(static_cast<HMODULE>(_lib_handle));
 #else
-        dlclose(lib_handle);
+        dlclose(_lib_handle);
 #endif
-        lib_handle = nullptr;
+        _lib_handle = nullptr;
     }
-    singleton = nullptr;
+    _singleton = nullptr;
 }
 
 OpenH264Loader *OpenH264Loader::get_singleton() {
-    return singleton;
+    return _singleton;
 }
 
 void OpenH264Loader::_bind_methods() {
@@ -56,13 +52,8 @@ void OpenH264Loader::_bind_methods() {
     ClassDB::bind_method(D_METHOD("_on_load_complete", "error"),
                          &OpenH264Loader::_on_load_complete);
 
-    ADD_SIGNAL(MethodInfo("library_ready",
-                          PropertyInfo(Variant::INT, "error")));
+    ADD_SIGNAL(MethodInfo("library_ready", PropertyInfo(Variant::INT, "error")));
 }
-
-// ---------------------------------------------------------------------------
-// Platform helpers
-// ---------------------------------------------------------------------------
 
 String OpenH264Loader::_get_lib_filename() const {
 #if defined(_WIN32)
@@ -94,14 +85,8 @@ String OpenH264Loader::_get_md5_url() const {
     return String("http://ciscobinary.openh264.org/") + _get_lib_filename() + ".signed.md5.txt";
 }
 
-// ---------------------------------------------------------------------------
-// Background load orchestration
-// ---------------------------------------------------------------------------
-
 void OpenH264Loader::_start_background_load() {
-    // Hold a reference so the object stays alive while the thread runs.
-    self_ref = Ref<OpenH264Loader>(this);
-
+    _self_ref = Ref<OpenH264Loader>(this);
     WorkerThreadPool::get_singleton()->add_task(
             Callable(this, "_background_load_task"),
             false,
@@ -111,7 +96,6 @@ void OpenH264Loader::_start_background_load() {
 void OpenH264Loader::_background_load_task() {
     const String lib_path = _get_lib_user_path();
 
-    // Already on disk — verify MD5 then load directly.
     if (FileAccess::file_exists(lib_path)) {
         UtilityFunctions::print("[openh264] Library found on disk, loading...");
         Error err = _load_library();
@@ -119,11 +103,9 @@ void OpenH264Loader::_background_load_task() {
         return;
     }
 
-    // Ensure destination directory exists.
     DirAccess::make_dir_recursive_absolute(
             OS::get_singleton()->get_user_data_dir() + "/openh264");
 
-    // Download bz2.
     UtilityFunctions::print("[openh264] Downloading: ", _get_cdn_url());
     PackedByteArray bz2_data = _download_bytes(_get_cdn_url());
     if (bz2_data.is_empty()) {
@@ -132,7 +114,6 @@ void OpenH264Loader::_background_load_task() {
         return;
     }
 
-    // Download signed MD5 (hash of the decompressed .so, not the .bz2).
     PackedByteArray md5_data = _download_bytes(_get_md5_url());
     if (md5_data.is_empty()) {
         UtilityFunctions::printerr("[openh264] MD5 download failed");
@@ -140,14 +121,12 @@ void OpenH264Loader::_background_load_task() {
         return;
     }
 
-    // Extract first — MD5 is computed against the decompressed library.
     Error err = _extract_and_save(bz2_data, lib_path);
     if (err != OK) {
         call_deferred("_on_load_complete", (int)err);
         return;
     }
 
-    // Verify MD5 of the extracted file.
     Ref<FileAccess> f = FileAccess::open(lib_path, FileAccess::READ);
     if (!f.is_valid()) {
         call_deferred("_on_load_complete", (int)ERR_FILE_CANT_READ);
@@ -163,24 +142,18 @@ void OpenH264Loader::_background_load_task() {
         return;
     }
 
-    // Load into process.
     err = _load_library();
     call_deferred("_on_load_complete", (int)err);
 }
 
-// ---------------------------------------------------------------------------
-// HTTP download (polling loop — runs in worker thread)
-// ---------------------------------------------------------------------------
-
 PackedByteArray OpenH264Loader::_download_bytes(const String &url) const {
-    // Parse "http://host/path"
     String stripped = url.trim_prefix("http://").trim_prefix("https://");
-    int slash = stripped.find("/");
+    int    slash    = stripped.find("/");
     if (slash < 0) {
         return {};
     }
-    String host = stripped.substr(0, slash);
-    String path = stripped.substr(slash);
+    String host    = stripped.substr(0, slash);
+    String path    = stripped.substr(slash);
     bool   use_tls = url.begins_with("https://");
     int    port    = use_tls ? 443 : 80;
 
@@ -192,7 +165,6 @@ PackedByteArray OpenH264Loader::_download_bytes(const String &url) const {
         return {};
     }
 
-    // Wait for connection.
     while (client->get_status() == HTTPClient::STATUS_CONNECTING ||
            client->get_status() == HTTPClient::STATUS_RESOLVING) {
         client->poll();
@@ -202,7 +174,6 @@ PackedByteArray OpenH264Loader::_download_bytes(const String &url) const {
         return {};
     }
 
-    // Send GET request.
     PackedStringArray headers;
     headers.push_back("User-Agent: godot-openh264");
     err = client->request(HTTPClient::METHOD_GET, path, headers);
@@ -210,7 +181,6 @@ PackedByteArray OpenH264Loader::_download_bytes(const String &url) const {
         return {};
     }
 
-    // Wait for response headers.
     while (client->get_status() == HTTPClient::STATUS_REQUESTING) {
         client->poll();
         OS::get_singleton()->delay_msec(10);
@@ -224,7 +194,6 @@ PackedByteArray OpenH264Loader::_download_bytes(const String &url) const {
         return {};
     }
 
-    // Read body.
     PackedByteArray result;
     while (client->get_status() == HTTPClient::STATUS_BODY) {
         client->poll();
@@ -239,10 +208,6 @@ PackedByteArray OpenH264Loader::_download_bytes(const String &url) const {
     return result;
 }
 
-// ---------------------------------------------------------------------------
-// MD5 verification
-// ---------------------------------------------------------------------------
-
 PackedByteArray OpenH264Loader::_compute_md5(const PackedByteArray &data) const {
     Ref<HashingContext> ctx;
     ctx.instantiate();
@@ -252,19 +217,14 @@ PackedByteArray OpenH264Loader::_compute_md5(const PackedByteArray &data) const 
 }
 
 bool OpenH264Loader::_verify_md5(const PackedByteArray &data,
-                                   const PackedByteArray &signed_md5_txt) const {
+                                  const PackedByteArray &signed_md5_txt) const {
     String txt = String::utf8(reinterpret_cast<const char *>(signed_md5_txt.ptr()),
                               signed_md5_txt.size()).strip_edges();
 
-    // Support two formats:
-    //   BSD: "MD5 (filename) = <hash>"
-    //   GNU: "<hash>  filename"
     String expected;
     if (txt.contains(" = ")) {
-        // BSD format — hash is the last token after " = "
         expected = txt.get_slice(" = ", txt.get_slice_count(" = ") - 1).strip_edges().to_lower();
     } else {
-        // GNU format — hash is the first token
         expected = txt.split(" ")[0].strip_edges().to_lower();
     }
 
@@ -273,9 +233,8 @@ bool OpenH264Loader::_verify_md5(const PackedByteArray &data,
         return false;
     }
 
-    // Compute actual MD5.
     PackedByteArray hash = _compute_md5(data);
-    String actual;
+    String          actual;
     for (int i = 0; i < hash.size(); i++) {
         char buf[3];
         snprintf(buf, sizeof(buf), "%02x", hash[i]);
@@ -286,14 +245,10 @@ bool OpenH264Loader::_verify_md5(const PackedByteArray &data,
     return actual == expected;
 }
 
-// ---------------------------------------------------------------------------
-// bz2 extraction
-// ---------------------------------------------------------------------------
-
 Error OpenH264Loader::_extract_and_save(const PackedByteArray &bz2_data,
                                          const String &dst_path) const {
-    const unsigned int max_out = 32 * 1024 * 1024; // 32 MB upper bound
-    PackedByteArray out;
+    const unsigned int max_out = 32 * 1024 * 1024;
+    PackedByteArray    out;
     out.resize(max_out);
 
     unsigned int out_len = max_out;
@@ -322,32 +277,28 @@ Error OpenH264Loader::_extract_and_save(const PackedByteArray &bz2_data,
     return OK;
 }
 
-// ---------------------------------------------------------------------------
-// dlopen / LoadLibrary
-// ---------------------------------------------------------------------------
-
 Error OpenH264Loader::_load_library() {
     const String lib_path_global =
             ProjectSettings::get_singleton()->globalize_path(_get_lib_user_path());
 
 #if defined(_WIN32)
-    lib_handle = static_cast<void *>(LoadLibraryA(lib_path_global.utf8().get_data()));
-    if (!lib_handle) {
+    _lib_handle = static_cast<void *>(LoadLibraryA(lib_path_global.utf8().get_data()));
+    if (!_lib_handle) {
         UtilityFunctions::printerr("[openh264] LoadLibrary failed: ", (int64_t)GetLastError());
         return ERR_CANT_OPEN;
     }
 #else
-    lib_handle = dlopen(lib_path_global.utf8().get_data(), RTLD_LAZY | RTLD_LOCAL);
-    if (!lib_handle) {
+    _lib_handle = dlopen(lib_path_global.utf8().get_data(), RTLD_LAZY | RTLD_LOCAL);
+    if (!_lib_handle) {
         UtilityFunctions::printerr("[openh264] dlopen failed: ", String(dlerror()));
         return ERR_CANT_OPEN;
     }
 #endif
 
-    fn_create_decoder  = reinterpret_cast<FnWelsCreateDecoder>(get_proc("WelsCreateDecoder"));
-    fn_destroy_decoder = reinterpret_cast<FnWelsDestroyDecoder>(get_proc("WelsDestroyDecoder"));
+    _fn_create_decoder  = reinterpret_cast<FnWelsCreateDecoder>(_get_proc("WelsCreateDecoder"));
+    _fn_destroy_decoder = reinterpret_cast<FnWelsDestroyDecoder>(_get_proc("WelsDestroyDecoder"));
 
-    if (!fn_create_decoder || !fn_destroy_decoder) {
+    if (!_fn_create_decoder || !_fn_destroy_decoder) {
         UtilityFunctions::printerr("[openh264] Failed to resolve required symbols");
         return ERR_CANT_OPEN;
     }
@@ -356,29 +307,20 @@ Error OpenH264Loader::_load_library() {
     return OK;
 }
 
-// ---------------------------------------------------------------------------
-// Main-thread completion handler
-// ---------------------------------------------------------------------------
-
 void OpenH264Loader::_on_load_complete(int error) {
-    // Keep alive through emit_signal, then release the circular ref.
-    Ref<OpenH264Loader> keep_alive = self_ref;
-    self_ref                       = Ref<OpenH264Loader>();
+    Ref<OpenH264Loader> keep_alive = _self_ref;
+    _self_ref                      = Ref<OpenH264Loader>();
     emit_signal("library_ready", error);
 }
 
-// ---------------------------------------------------------------------------
-// Symbol resolution
-// ---------------------------------------------------------------------------
-
-void *OpenH264Loader::get_proc(const String &name) const {
-    if (!lib_handle) {
+void *OpenH264Loader::_get_proc(const String &name) const {
+    if (!_lib_handle) {
         return nullptr;
     }
 #if defined(_WIN32)
     return reinterpret_cast<void *>(
-            GetProcAddress(static_cast<HMODULE>(lib_handle), name.utf8().get_data()));
+            GetProcAddress(static_cast<HMODULE>(_lib_handle), name.utf8().get_data()));
 #else
-    return dlsym(lib_handle, name.utf8().get_data());
+    return dlsym(_lib_handle, name.utf8().get_data());
 #endif
 }

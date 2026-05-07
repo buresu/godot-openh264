@@ -5,10 +5,10 @@
 
 namespace godot {
 
-class OpenH264VideoStreamPlayback;
+class VideoStreamPlaybackOpenH264;
 
-class OpenH264VideoStream : public VideoStream {
-    GDCLASS(OpenH264VideoStream, VideoStream)
+class VideoStreamOpenH264 : public VideoStream {
+    GDCLASS(VideoStreamOpenH264, VideoStream)
 
 protected:
     static void _bind_methods();

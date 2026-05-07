@@ -1,8 +1,8 @@
 #include "register_types.hpp"
 
 #include "OpenH264Loader.hpp"
-#include "OpenH264VideoStream.hpp"
-#include "OpenH264VideoStreamPlayback.hpp"
+#include "VideoStreamOpenH264.hpp"
+#include "VideoStreamPlaybackOpenH264.hpp"
 
 #include <gdextension_interface.h>
 #include <godot_cpp/core/defs.hpp>
@@ -15,8 +15,8 @@ void initialize_openh264_module(ModuleInitializationLevel p_level) {
         return;
     }
     ClassDB::register_class<OpenH264Loader>();
-    ClassDB::register_class<OpenH264VideoStream>();
-    ClassDB::register_class<OpenH264VideoStreamPlayback>();
+    ClassDB::register_class<VideoStreamOpenH264>();
+    ClassDB::register_class<VideoStreamPlaybackOpenH264>();
 }
 
 void uninitialize_openh264_module(ModuleInitializationLevel p_level) {

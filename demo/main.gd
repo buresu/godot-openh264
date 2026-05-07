@@ -15,7 +15,7 @@ func _on_open_button_pressed() -> void:
 func _on_file_dialog_file_selected(path: String) -> void:
 	video_player.stop()
 
-	var stream := OpenH264VideoStream.new()
+	var stream := VideoStreamOpenH264.new()
 	stream.file = path
 	video_player.stream = stream
 	video_player.play()

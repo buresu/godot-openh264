@@ -72,8 +72,8 @@ add_library(godot-openh264 SHARED
     src/register_types.cpp
     src/OpenH264Loader.cpp
     src/OpenH264Decoder.cpp
-    src/OpenH264VideoStream.cpp
-    src/OpenH264VideoStreamPlayback.cpp
+    src/VideoStreamOpenH264.cpp
+    src/VideoStreamPlaybackOpenH264.cpp
 )
 
 target_include_directories(godot-openh264 PRIVATE
