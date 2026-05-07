@@ -1,81 +1,105 @@
-name: Build & Release
+name: Build and Release
 
 on:
   push:
     tags:
-      - "v*"
+      - 'v*'
 
 jobs:
   build:
-    name: ${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.config }}
+    name: Build (${{ matrix.os }}, ${{ matrix.arch }}, ${{ matrix.config }})
     runs-on: ${{ matrix.runner }}
     strategy:
-      fail-fast: false
       matrix:
         include:
-          # Linux x86_64
-          - platform: linux
+          - os: windows
             arch: x86_64
-            config: debug
-            runner: ubuntu-22.04
-          - platform: linux
-            arch: x86_64
-            config: release
-            runner: ubuntu-22.04
-
-          # Linux arm64
-          - platform: linux
-            arch: arm64
-            config: debug
-            runner: ubuntu-22.04-arm
-          - platform: linux
-            arch: arm64
-            config: release
-            runner: ubuntu-22.04-arm
-
-          # Windows x86_64
-          - platform: windows
-            arch: x86_64
-            config: debug
+            config: Debug
             runner: windows-latest
-          - platform: windows
+            cmake_args: -A x64
+            ext: dll
+          - os: windows
             arch: x86_64
-            config: release
+            config: Release
             runner: windows-latest
-
-          # macOS arm64 only
-          - platform: macos
+            cmake_args: -A x64
+            ext: dll
+          - os: windows
             arch: arm64
-            config: debug
-            runner: macos-latest
-            cmake_extra: "-DCMAKE_OSX_ARCHITECTURES=arm64"
-          - platform: macos
+            config: Debug
+            runner: windows-latest
+            cmake_args: -A ARM64
+            ext: dll
+          - os: windows
             arch: arm64
-            config: release
+            config: Release
+            runner: windows-latest
+            cmake_args: -A ARM64
+            ext: dll
+          - os: macos
+            arch: arm64
+            config: Debug
             runner: macos-latest
-            cmake_extra: "-DCMAKE_OSX_ARCHITECTURES=arm64"
+            cmake_args: ''
+            ext: dylib
+          - os: macos
+            arch: arm64
+            config: Release
+            runner: macos-latest
+            cmake_args: ''
+            ext: dylib
+          - os: linux
+            arch: x86_64
+            config: Debug
+            runner: ubuntu-latest
+            cmake_args: ''
+            ext: so
+          - os: linux
+            arch: x86_64
+            config: Release
+            runner: ubuntu-latest
+            cmake_args: ''
+            ext: so
+          - os: linux
+            arch: arm64
+            config: Debug
+            runner: ubuntu-24.04-arm
+            cmake_args: ''
+            ext: so
+          - os: linux
+            arch: arm64
+            config: Release
+            runner: ubuntu-24.04-arm
+            cmake_args: ''
+            ext: so
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
-
-      - name: Configure
-        run: |
-          cmake -B build \
-            -DCMAKE_BUILD_TYPE=${{ matrix.config == 'release' && 'Release' || 'Debug' }} \
-            -DGODOT_ARCH=${{ matrix.arch }} \
-            ${{ matrix.cmake_extra || '' }}
+      - name: Configure CMake
+        run: cmake -B build ${{ matrix.cmake_args }} -DCMAKE_BUILD_TYPE=${{ matrix.config }}
 
       - name: Build
-        run: cmake --build build --config ${{ matrix.config == 'release' && 'Release' || 'Debug' }} --parallel
+        run: cmake --build build --config ${{ matrix.config }}
+
+      - name: Install
+        run: cmake --install build --config ${{ matrix.config }}
+
+      - name: Get library filename
+        id: lib-name
+        shell: bash
+        run: |
+          config_lower=$(echo "${{ matrix.config }}" | tr '[:upper:]' '[:lower:]')
+          echo "name=libgodot-openh264.${{ matrix.os }}.${config_lower}.${{ matrix.arch }}.${{ matrix.ext }}" >> $GITHUB_OUTPUT
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: godot-openh264-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.config }}
-          path: demo/addons/godot-openh264/bin/
+          name: lib-${{ matrix.os }}-${{ matrix.arch }}-${{ matrix.config }}
+          path: demo/addons/godot-openh264/bin/${{ steps.lib-name.outputs.name }}
 
   release:
     name: Create Release
@@ -85,23 +109,26 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v6
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
-          path: artifacts/
+          path: artifacts
+          merge-multiple: true
 
-      - name: Assemble addon zip
+      - name: Prepare release package
         run: |
           mkdir -p release/addons/godot-openh264/bin
-          cp demo/addons/godot-openh264/godot-openh264.gdextension \
-             release/addons/godot-openh264/
-          find artifacts/ -type f | xargs -I{} cp {} release/addons/godot-openh264/bin/
+          cp artifacts/* release/addons/godot-openh264/bin/
+          cp demo/addons/godot-openh264/godot-openh264.gdextension release/addons/godot-openh264/
+          cp demo/addons/godot-openh264/godot-openh264.gdextension.uid release/addons/godot-openh264/
+          cp -r demo/addons/godot-openh264/shaders release/addons/godot-openh264/
           cd release
-          zip -r ../godot-openh264-${{ github.ref_name }}.zip addons/
+          zip -r ../godot-openh264-${{ github.ref_name }}.zip .
 
-      - name: Publish GitHub Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: godot-openh264-${{ github.ref_name }}.zip
