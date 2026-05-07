@@ -29,6 +29,14 @@ int OpenH264VideoStreamPlayback::mp4_read_cb(int64_t offset, void *buf,
 
 OpenH264VideoStreamPlayback::OpenH264VideoStreamPlayback() {
     texture.instantiate();
+
+    // Reuse the existing singleton loader if available, otherwise create one.
+    // The loader starts the background download automatically in its constructor.
+    if (OpenH264Loader::get_singleton()) {
+        loader_ = Ref<OpenH264Loader>(OpenH264Loader::get_singleton());
+    } else {
+        loader_.instantiate();
+    }
 }
 
 OpenH264VideoStreamPlayback::~OpenH264VideoStreamPlayback() {
@@ -165,13 +173,11 @@ void OpenH264VideoStreamPlayback::advance_frame() {
 // ---------------------------------------------------------------------------
 
 void OpenH264VideoStreamPlayback::_play() {
-    if (!mp4_open) {
-        open_file();
-    }
-    playing = true;
-    paused  = false;
-    time    = 0.0;
+    playing    = true;
+    paused     = false;
+    time       = 0.0;
     sample_idx = 0;
+    // Actual file open is deferred to _update() once the library is ready.
 }
 
 void OpenH264VideoStreamPlayback::_stop() {
@@ -216,8 +222,18 @@ void OpenH264VideoStreamPlayback::_seek(double p_time) {
 }
 
 void OpenH264VideoStreamPlayback::_update(double p_delta) {
-    if (!playing || paused || !mp4_open) {
+    if (!playing || paused) {
         return;
+    }
+    // Wait until openh264 is loaded before opening/decoding.
+    if (!loader_.is_valid() || !loader_->is_loaded()) {
+        return;
+    }
+    if (!mp4_open) {
+        open_file();
+        if (!mp4_open) {
+            return;
+        }
     }
 
     time += p_delta;

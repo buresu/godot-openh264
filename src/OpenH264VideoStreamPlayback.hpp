@@ -1,8 +1,10 @@
 #pragma once
 
 #include "OpenH264Decoder.hpp"
+#include "OpenH264Loader.hpp"
 
 #include <godot_cpp/classes/image_texture.hpp>
+#include <godot_cpp/classes/ref.hpp>
 #include <godot_cpp/classes/video_stream_playback.hpp>
 #include <godot_cpp/variant/string.hpp>
 
@@ -24,6 +26,9 @@ class OpenH264VideoStreamPlayback : public VideoStreamPlayback {
 
     // Raw file bytes kept in memory for minimp4 callbacks
     PackedByteArray file_data;
+
+    // Loader (singleton reuse or newly created)
+    Ref<OpenH264Loader> loader_;
 
     // Decoder
     OpenH264Decoder decoder;

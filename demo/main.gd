@@ -5,19 +5,7 @@ extends Node
 @onready var open_button: Button = $UI/OpenButton
 @onready var file_dialog: FileDialog = $UI/FileDialog
 
-var loader: OpenH264Loader
-
 func _ready() -> void:
-	loader = OpenH264Loader.new()
-	add_child(loader)
-
-	status_label.text = "Downloading openh264..."
-	loader.ensure_ready_async("2.6.0")
-	var err: int = await loader.library_ready
-	if err != OK:
-		status_label.text = "Error: failed to load openh264 (code %d)" % err
-		return
-
 	status_label.text = "Ready — open an MP4 file to play."
 	open_button.disabled = false
 
