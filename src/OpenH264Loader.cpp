@@ -91,7 +91,7 @@ String OpenH264Loader::_get_cdn_url() const {
 }
 
 String OpenH264Loader::_get_md5_url() const {
-    return _get_cdn_url() + ".signed.md5.txt";
+    return String("http://ciscobinary.openh264.org/") + _get_lib_filename() + ".signed.md5.txt";
 }
 
 // ---------------------------------------------------------------------------
@@ -132,7 +132,7 @@ void OpenH264Loader::_background_load_task() {
         return;
     }
 
-    // Download signed MD5.
+    // Download signed MD5 (hash of the decompressed .so, not the .bz2).
     PackedByteArray md5_data = _download_bytes(_get_md5_url());
     if (md5_data.is_empty()) {
         UtilityFunctions::printerr("[openh264] MD5 download failed");
@@ -140,17 +140,26 @@ void OpenH264Loader::_background_load_task() {
         return;
     }
 
-    // Verify.
-    if (!_verify_md5(bz2_data, md5_data)) {
-        UtilityFunctions::printerr("[openh264] MD5 mismatch — aborting");
-        call_deferred("_on_load_complete", (int)ERR_INVALID_DATA);
-        return;
-    }
-
-    // Extract and save.
+    // Extract first — MD5 is computed against the decompressed library.
     Error err = _extract_and_save(bz2_data, lib_path);
     if (err != OK) {
         call_deferred("_on_load_complete", (int)err);
+        return;
+    }
+
+    // Verify MD5 of the extracted file.
+    Ref<FileAccess> f = FileAccess::open(lib_path, FileAccess::READ);
+    if (!f.is_valid()) {
+        call_deferred("_on_load_complete", (int)ERR_FILE_CANT_READ);
+        return;
+    }
+    PackedByteArray so_data = f->get_buffer(f->get_length());
+
+    if (!_verify_md5(so_data, md5_data)) {
+        UtilityFunctions::printerr("[openh264] MD5 mismatch — removing corrupted file");
+        DirAccess::remove_absolute(
+                ProjectSettings::get_singleton()->globalize_path(lib_path));
+        call_deferred("_on_load_complete", (int)ERR_INVALID_DATA);
         return;
     }
 
@@ -244,10 +253,20 @@ PackedByteArray OpenH264Loader::_compute_md5(const PackedByteArray &data) const 
 
 bool OpenH264Loader::_verify_md5(const PackedByteArray &data,
                                    const PackedByteArray &signed_md5_txt) const {
-    // Parse: first whitespace-separated token is the MD5 hex string.
     String txt = String::utf8(reinterpret_cast<const char *>(signed_md5_txt.ptr()),
-                              signed_md5_txt.size());
-    String expected = txt.split(" ")[0].split("\t")[0].strip_edges().to_lower();
+                              signed_md5_txt.size()).strip_edges();
+
+    // Support two formats:
+    //   BSD: "MD5 (filename) = <hash>"
+    //   GNU: "<hash>  filename"
+    String expected;
+    if (txt.contains(" = ")) {
+        // BSD format — hash is the last token after " = "
+        expected = txt.get_slice(" = ", txt.get_slice_count(" = ") - 1).strip_edges().to_lower();
+    } else {
+        // GNU format — hash is the first token
+        expected = txt.split(" ")[0].strip_edges().to_lower();
+    }
 
     if (expected.length() != 32) {
         UtilityFunctions::printerr("[openh264] Unexpected MD5 format: ", txt.left(64));
