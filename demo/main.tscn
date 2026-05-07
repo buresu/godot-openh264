@@ -21,13 +21,30 @@ offset_bottom = 48.0
 theme_override_font_sizes/font_size = 20
 text = "Initializing..."
 
-[node name="OpenButton" type="Button" parent="UI" unique_id=1276332179]
+[node name="EnableButton" type="Button" parent="UI" unique_id=2011334521]
 offset_left = 16.0
 offset_top = 56.0
-offset_right = 160.0
+offset_right = 200.0
+offset_bottom = 88.0
+toggle_mode = true
+text = "Enable OpenH264"
+
+[node name="OpenButton" type="Button" parent="UI" unique_id=1276332179]
+offset_left = 216.0
+offset_top = 56.0
+offset_right = 360.0
 offset_bottom = 88.0
 disabled = true
 text = "Open MP4..."
+
+[node name="LicenseLabel" type="Label" parent="UI" unique_id=-982521618]
+visible = false
+offset_left = 16.0
+offset_top = 96.0
+offset_right = 800.0
+offset_bottom = 118.0
+theme_override_font_sizes/font_size = 13
+text = "OpenH264 Video Codec provided by Cisco Systems, Inc."
 
 [node name="FileDialog" type="FileDialog" parent="UI" unique_id=1003011390]
 title = "Open a File"
@@ -36,5 +53,6 @@ access = 2
 filters = PackedStringArray("*.mp4 ; MP4 Video")
 use_native_dialog = true
 
+[connection signal="pressed" from="UI/EnableButton" to="." method="_on_enable_button_pressed"]
 [connection signal="pressed" from="UI/OpenButton" to="." method="_on_open_button_pressed"]
 [connection signal="file_selected" from="UI/FileDialog" to="." method="_on_file_dialog_file_selected"]

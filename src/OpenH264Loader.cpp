@@ -4,6 +4,7 @@
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/hashing_context.hpp>
 #include <godot_cpp/classes/http_client.hpp>
+#include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/os.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/classes/worker_thread_pool.hpp>
@@ -26,7 +27,7 @@ OpenH264Loader *OpenH264Loader::_singleton = nullptr;
 
 OpenH264Loader::OpenH264Loader() {
     _singleton = this;
-    _start_background_load();
+    _start_background_download();
 }
 
 OpenH264Loader::~OpenH264Loader() {
@@ -47,11 +48,19 @@ OpenH264Loader *OpenH264Loader::get_singleton() {
 
 void OpenH264Loader::_bind_methods() {
     ClassDB::bind_method(D_METHOD("is_loaded"), &OpenH264Loader::is_loaded);
-    ClassDB::bind_method(D_METHOD("_background_load_task"),
-                         &OpenH264Loader::_background_load_task);
-    ClassDB::bind_method(D_METHOD("_on_load_complete", "error"),
-                         &OpenH264Loader::_on_load_complete);
+    ClassDB::bind_method(D_METHOD("is_downloaded"), &OpenH264Loader::is_downloaded);
+    ClassDB::bind_method(D_METHOD("is_enabled"), &OpenH264Loader::is_enabled);
+    ClassDB::bind_method(D_METHOD("set_enabled", "enabled"), &OpenH264Loader::set_enabled);
+    ClassDB::bind_method(D_METHOD("_background_download_task"),
+                         &OpenH264Loader::_background_download_task);
+    ClassDB::bind_method(D_METHOD("_load_library_task"),
+                         &OpenH264Loader::_load_library_task);
+    ClassDB::bind_method(D_METHOD("_on_download_complete", "error"),
+                         &OpenH264Loader::_on_download_complete);
+    ClassDB::bind_method(D_METHOD("_on_library_load_complete", "error"),
+                         &OpenH264Loader::_on_library_load_complete);
 
+    ADD_PROPERTY(PropertyInfo(Variant::BOOL, "enabled"), "set_enabled", "is_enabled");
     ADD_SIGNAL(MethodInfo("library_ready", PropertyInfo(Variant::INT, "error")));
 }
 
@@ -85,51 +94,75 @@ String OpenH264Loader::_get_md5_url() const {
     return String("http://ciscobinary.openh264.org/") + _get_lib_filename() + ".signed.md5.txt";
 }
 
-void OpenH264Loader::_start_background_load() {
-    _self_ref = Ref<OpenH264Loader>(this);
+String OpenH264Loader::_get_license_url() const {
+    return "http://www.openh264.org/BINARY_LICENSE.txt";
+}
+
+String OpenH264Loader::_get_license_user_path() const {
+    return "user://openh264/BINARY_LICENSE.txt";
+}
+
+void OpenH264Loader::_start_background_download() {
     WorkerThreadPool::get_singleton()->add_task(
-            Callable(this, "_background_load_task"),
+            Callable(this, "_background_download_task"),
             false,
             "openh264_load");
 }
 
-void OpenH264Loader::_background_load_task() {
+void OpenH264Loader::_background_download_task() {
     const String lib_path = _get_lib_user_path();
-
-    if (FileAccess::file_exists(lib_path)) {
-        UtilityFunctions::print("[openh264] Library found on disk, loading...");
-        Error err = _load_library();
-        call_deferred("_on_load_complete", (int)err);
-        return;
-    }
 
     DirAccess::make_dir_recursive_absolute(
             OS::get_singleton()->get_user_data_dir() + "/openh264");
+
+    // Download license file if not already present
+    const String license_path = _get_license_user_path();
+    if (!FileAccess::file_exists(license_path)) {
+        UtilityFunctions::print("[openh264] Downloading license: ", _get_license_url());
+        PackedByteArray license_data = _download_bytes(_get_license_url());
+        if (!license_data.is_empty()) {
+            Ref<FileAccess> lf = FileAccess::open(license_path, FileAccess::WRITE);
+            if (lf.is_valid()) {
+                lf->store_buffer(license_data);
+                UtilityFunctions::print(
+                        "[openh264] OpenH264 Video Codec provided by Cisco Systems, Inc.");
+                UtilityFunctions::print("[openh264] License saved to: ", license_path);
+            }
+        } else {
+            UtilityFunctions::printerr("[openh264] License download failed");
+        }
+    }
+
+    if (FileAccess::file_exists(lib_path)) {
+        UtilityFunctions::print("[openh264] Library found on disk.");
+        call_deferred("_on_download_complete", (int)OK);
+        return;
+    }
 
     UtilityFunctions::print("[openh264] Downloading: ", _get_cdn_url());
     PackedByteArray bz2_data = _download_bytes(_get_cdn_url());
     if (bz2_data.is_empty()) {
         UtilityFunctions::printerr("[openh264] Download failed");
-        call_deferred("_on_load_complete", (int)FAILED);
+        call_deferred("_on_download_complete", (int)FAILED);
         return;
     }
 
     PackedByteArray md5_data = _download_bytes(_get_md5_url());
     if (md5_data.is_empty()) {
         UtilityFunctions::printerr("[openh264] MD5 download failed");
-        call_deferred("_on_load_complete", (int)FAILED);
+        call_deferred("_on_download_complete", (int)FAILED);
         return;
     }
 
     Error err = _extract_and_save(bz2_data, lib_path);
     if (err != OK) {
-        call_deferred("_on_load_complete", (int)err);
+        call_deferred("_on_download_complete", (int)err);
         return;
     }
 
     Ref<FileAccess> f = FileAccess::open(lib_path, FileAccess::READ);
     if (!f.is_valid()) {
-        call_deferred("_on_load_complete", (int)ERR_FILE_CANT_READ);
+        call_deferred("_on_download_complete", (int)ERR_FILE_CANT_READ);
         return;
     }
     PackedByteArray so_data = f->get_buffer(f->get_length());
@@ -138,12 +171,16 @@ void OpenH264Loader::_background_load_task() {
         UtilityFunctions::printerr("[openh264] MD5 mismatch — removing corrupted file");
         DirAccess::remove_absolute(
                 ProjectSettings::get_singleton()->globalize_path(lib_path));
-        call_deferred("_on_load_complete", (int)ERR_INVALID_DATA);
+        call_deferred("_on_download_complete", (int)ERR_INVALID_DATA);
         return;
     }
 
-    err = _load_library();
-    call_deferred("_on_load_complete", (int)err);
+    call_deferred("_on_download_complete", (int)OK);
+}
+
+void OpenH264Loader::_load_library_task() {
+    Error err = _load_library();
+    call_deferred("_on_library_load_complete", (int)err);
 }
 
 PackedByteArray OpenH264Loader::_download_bytes(const String &url) const {
@@ -307,9 +344,34 @@ Error OpenH264Loader::_load_library() {
     return OK;
 }
 
-void OpenH264Loader::_on_load_complete(int error) {
-    Ref<OpenH264Loader> keep_alive = _self_ref;
-    _self_ref                      = Ref<OpenH264Loader>();
+void OpenH264Loader::set_enabled(bool p_enabled) {
+    if (_enabled == p_enabled) {
+        return;
+    }
+    _enabled = p_enabled;
+    if (_enabled && _downloaded && !is_loaded()) {
+        WorkerThreadPool::get_singleton()->add_task(
+                Callable(this, "_load_library_task"),
+                false,
+                "openh264_load_library");
+    }
+}
+
+void OpenH264Loader::_on_download_complete(int error) {
+    _downloaded = true;
+    if (error == OK && _enabled) {
+        WorkerThreadPool::get_singleton()->add_task(
+                Callable(this, "_load_library_task"),
+                false,
+                "openh264_load_library");
+        return;
+    }
+    if (error != OK) {
+        emit_signal("library_ready", error);
+    }
+}
+
+void OpenH264Loader::_on_library_load_complete(int error) {
     emit_signal("library_ready", error);
 }
 

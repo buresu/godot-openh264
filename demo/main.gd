@@ -2,12 +2,34 @@ extends Node
 
 @onready var video_player: VideoStreamPlayer = $VideoStreamPlayer
 @onready var status_label: Label = $UI/StatusLabel
+@onready var license_label: Label = $UI/LicenseLabel
+@onready var enable_button: Button = $UI/EnableButton
 @onready var open_button: Button = $UI/OpenButton
 @onready var file_dialog: FileDialog = $UI/FileDialog
 
 func _ready() -> void:
-	status_label.text = "Ready — open an MP4 file to play."
-	open_button.disabled = false
+	OpenH264Loader.library_ready.connect(_on_library_ready)
+
+	status_label.text = "OpenH264 is disabled. Press Enable to activate."
+	license_label.hide()
+	open_button.disabled = true
+
+func _on_enable_button_pressed() -> void:
+	if OpenH264Loader.enabled:
+		return
+
+	enable_button.disabled = true
+	status_label.text = "Downloading / loading OpenH264..."
+	license_label.show()
+	OpenH264Loader.enabled = true
+
+func _on_library_ready(error: int) -> void:
+	if error == OK:
+		status_label.text = "OpenH264 ready — open an MP4 file to play."
+		open_button.disabled = false
+	else:
+		status_label.text = "OpenH264 failed to load (error %d)." % error
+		enable_button.disabled = false
 
 func _on_open_button_pressed() -> void:
 	file_dialog.popup_centered_ratio(0.7)

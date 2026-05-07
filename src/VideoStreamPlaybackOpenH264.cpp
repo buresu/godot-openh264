@@ -1,5 +1,6 @@
 #define MINIMP4_IMPLEMENTATION
 #include "VideoStreamPlaybackOpenH264.hpp"
+#include "OpenH264Loader.hpp"
 
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
@@ -20,12 +21,6 @@ int VideoStreamPlaybackOpenH264::_mp4_read_cb(int64_t offset, void *buf,
 
 VideoStreamPlaybackOpenH264::VideoStreamPlaybackOpenH264() {
     _texture.instantiate();
-
-    if (OpenH264Loader::get_singleton()) {
-        _loader = Ref<OpenH264Loader>(OpenH264Loader::get_singleton());
-    } else {
-        _loader.instantiate();
-    }
 }
 
 VideoStreamPlaybackOpenH264::~VideoStreamPlaybackOpenH264() {
@@ -230,7 +225,7 @@ void VideoStreamPlaybackOpenH264::_update(double p_delta) {
     if (!_playing || _paused) {
         return;
     }
-    if (!_loader.is_valid() || !_loader->is_loaded()) {
+    if (!OpenH264Loader::get_singleton()->is_loaded()) {
         return;
     }
     if (!_mp4_open) {
