@@ -12,3 +12,6 @@
 [submodule "lib/bzip2"]
 	path = lib/bzip2
 	url = https://gitlab.com/bzip2/bzip2.git
+[submodule "lib/libyuv"]
+	path = lib/libyuv
+	url = https://chromium.googlesource.com/libyuv/libyuv

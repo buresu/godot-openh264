@@ -3,6 +3,8 @@
 
 #include <godot_cpp/variant/utility_functions.hpp>
 
+#include <libyuv.h>
+
 // Additional openh264 function pointer types resolved at runtime
 using FnInitialize   = long (ISVCDecoder::*)(const SDecodingParam *);
 using FnUninitialize = long (ISVCDecoder::*)();
@@ -97,22 +99,15 @@ Ref<Image> OpenH264Decoder::yuv420_to_image(const SBufferInfo &info,
     const uint8_t *u_plane  = yuv[1];
     const uint8_t *v_plane  = yuv[2];
 
-    for (int row = 0; row < height; ++row) {
-        for (int col = 0; col < width; ++col) {
-            const int Y = y_plane[row * stride_y + col];
-            const int U = u_plane[(row / 2) * stride_uv + (col / 2)] - 128;
-            const int V = v_plane[(row / 2) * stride_uv + (col / 2)] - 128;
-
-            const int R = CLAMP(Y + (int)(1.402f * V),         0, 255);
-            const int G = CLAMP(Y - (int)(0.344f * U + 0.714f * V), 0, 255);
-            const int B = CLAMP(Y + (int)(1.772f * U),         0, 255);
-
-            const int idx = (row * width + col) * 3;
-            dst[idx + 0]  = (uint8_t)R;
-            dst[idx + 1]  = (uint8_t)G;
-            dst[idx + 2]  = (uint8_t)B;
-        }
-    }
+    // libyuv: SIMD-optimized I420 → RGB (SSE2/AVX2/NEON selected at runtime)
+    // I420ToRAW outputs R,G,B order (matching FORMAT_RGB8).
+    // I420ToRGB24 outputs B,G,R order — do NOT use that one.
+    libyuv::I420ToRAW(
+            yuv[0], stride_y,
+            yuv[1], stride_uv,
+            yuv[2], stride_uv,
+            dst, width * 3,
+            width, height);
 
     return Image::create_from_data(width, height, false, Image::FORMAT_RGB8, rgb);
 }

@@ -131,14 +131,10 @@ void OpenH264VideoStreamPlayback::_send_sps_pps() {
         if (!sps || sps_size <= 0) {
             break;
         }
-        PackedByteArray nal;
-        for (uint8_t b : START_CODE) {
-            nal.append(b);
-        }
-        for (int i = 0; i < sps_size; ++i) {
-            nal.append(sps[i]);
-        }
-        decoder.decode_nal(nal.ptr(), nal.size()); // output ignored — no picture yet
+        annexb_buf_.clear();
+        annexb_buf_.insert(annexb_buf_.end(), START_CODE, START_CODE + 4);
+        annexb_buf_.insert(annexb_buf_.end(), sps, sps + sps_size);
+        decoder.decode_nal(annexb_buf_.data(), (int)annexb_buf_.size());
     }
 
     for (int idx = 0; ; ++idx) {
@@ -148,14 +144,10 @@ void OpenH264VideoStreamPlayback::_send_sps_pps() {
         if (!pps || pps_size <= 0) {
             break;
         }
-        PackedByteArray nal;
-        for (uint8_t b : START_CODE) {
-            nal.append(b);
-        }
-        for (int i = 0; i < pps_size; ++i) {
-            nal.append(pps[i]);
-        }
-        decoder.decode_nal(nal.ptr(), nal.size());
+        annexb_buf_.clear();
+        annexb_buf_.insert(annexb_buf_.end(), START_CODE, START_CODE + 4);
+        annexb_buf_.insert(annexb_buf_.end(), pps, pps + pps_size);
+        decoder.decode_nal(annexb_buf_.data(), (int)annexb_buf_.size());
     }
 }
 
@@ -182,8 +174,10 @@ void OpenH264VideoStreamPlayback::advance_frame() {
 
     const uint8_t *raw = file_data.ptr() + ofs;
 
-    // AVCC: length-prefixed NAL units → convert to Annex-B for openh264
-    PackedByteArray annexb;
+    // AVCC → Annex-B: reuse a class-level buffer to avoid per-frame allocation.
+    annexb_buf_.clear();
+    annexb_buf_.reserve(size + 4); // rough upper bound, no realloc in practice
+
     size_t remaining = size;
     const uint8_t *p = raw;
 
@@ -197,19 +191,15 @@ void OpenH264VideoStreamPlayback::advance_frame() {
             break;
         }
 
-        // Append Annex-B start code + NAL
-        for (uint8_t b : START_CODE) {
-            annexb.append(b);
-        }
-        for (uint32_t i = 0; i < nal_size; ++i) {
-            annexb.append(p[i]);
-        }
+        // Start code + NAL data via insert (single memcpy-equivalent)
+        annexb_buf_.insert(annexb_buf_.end(), START_CODE, START_CODE + 4);
+        annexb_buf_.insert(annexb_buf_.end(), p, p + nal_size);
 
         p         += nal_size;
         remaining -= nal_size;
     }
 
-    Ref<Image> img = decoder.decode_nal(annexb.ptr(), annexb.size());
+    Ref<Image> img = decoder.decode_nal(annexb_buf_.data(), (int)annexb_buf_.size());
     if (img.is_valid()) {
         pending_frame = img; // texture upload is done in _update()
     }

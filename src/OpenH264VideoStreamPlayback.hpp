@@ -8,6 +8,9 @@
 #include <godot_cpp/classes/video_stream_playback.hpp>
 #include <godot_cpp/variant/string.hpp>
 
+#include <cstdint>
+#include <vector>
+
 // minimp4 type declarations only (implementation compiled in .cpp)
 #define MP4D_64BIT_SUPPORTED 1
 #include <minimp4.h>
@@ -26,6 +29,9 @@ class OpenH264VideoStreamPlayback : public VideoStreamPlayback {
 
     // Raw file bytes kept in memory for minimp4 callbacks
     PackedByteArray file_data;
+
+    // Reusable Annex-B buffer — avoids per-frame allocation in advance_frame()
+    std::vector<uint8_t> annexb_buf_;
 
     // Loader (singleton reuse or newly created)
     Ref<OpenH264Loader> loader_;

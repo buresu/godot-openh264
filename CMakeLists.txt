@@ -59,6 +59,14 @@ set(ENABLE_STATIC_LIB ON  CACHE BOOL "" FORCE)
 set(ENABLE_SHARED_LIB OFF CACHE BOOL "" FORCE)
 add_subdirectory(${BZIP2_DIR})
 
+# ---- libyuv (built from submodule) ----
+set(LIBYUV_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/libyuv")
+if(NOT EXISTS "${LIBYUV_DIR}/CMakeLists.txt")
+    message(FATAL_ERROR "libyuv not found. Run: git submodule update --init --recursive")
+endif()
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+add_subdirectory(${LIBYUV_DIR})
+
 # ---- Source files ----
 add_library(godot-openh264 SHARED
     src/register_types.cpp
@@ -72,9 +80,10 @@ target_include_directories(godot-openh264 PRIVATE
     src/
     ${OPENH264_INCLUDE_DIR}
     lib/minimp4/
+    lib/libyuv/include/
 )
 
-target_link_libraries(godot-openh264 PRIVATE godot-cpp bz2_static)
+target_link_libraries(godot-openh264 PRIVATE godot-cpp bz2_static yuv)
 
 if(WIN32)
     # LoadLibrary / GetProcAddress
