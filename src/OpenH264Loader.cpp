@@ -31,14 +31,7 @@ OpenH264Loader::OpenH264Loader() {
 }
 
 OpenH264Loader::~OpenH264Loader() {
-    if (_lib_handle) {
-#if defined(_WIN32)
-        FreeLibrary(static_cast<HMODULE>(_lib_handle));
-#else
-        dlclose(_lib_handle);
-#endif
-        _lib_handle = nullptr;
-    }
+    _unload_library();
     _singleton = nullptr;
 }
 
@@ -181,6 +174,18 @@ void OpenH264Loader::_background_download_task() {
 void OpenH264Loader::_load_library_task() {
     Error err = _load_library();
     call_deferred("_on_library_load_complete", (int)err);
+}
+
+void OpenH264Loader::_unload_library() {
+        if (_lib_handle) {
+#if defined(_WIN32)
+        FreeLibrary(static_cast<HMODULE>(_lib_handle));
+#else
+        dlclose(_lib_handle);
+#endif
+        _lib_handle = nullptr;
+        UtilityFunctions::print("[openh264] Library unloaded (v", OPENH264_VERSION, ")");
+    }
 }
 
 PackedByteArray OpenH264Loader::_download_bytes(const String &url) const {
@@ -354,6 +359,8 @@ void OpenH264Loader::set_enabled(bool p_enabled) {
                 Callable(this, "_load_library_task"),
                 false,
                 "openh264_load_library");
+    } else if (!_enabled && is_loaded()) {
+        _unload_library();
     }
 }
 

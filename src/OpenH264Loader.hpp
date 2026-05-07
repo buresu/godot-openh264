@@ -60,6 +60,7 @@ private:
                                       const String &dst_path) const;
 
     Error  _load_library();
+    void _unload_library();
     void   _on_download_complete(int error);
     void   _on_library_load_complete(int error);
     void  *_get_proc(const String &name) const;
