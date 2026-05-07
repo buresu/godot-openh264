@@ -18,7 +18,3 @@ run/main_scene="res://main.tscn"
 
 window/size/viewport_width=1280
 window/size/viewport_height=720
-
-[editor_plugins]
-
-enabled=PackedStringArray("res://addons/godot-openh264/godot-openh264.gdextension")
