@@ -2,7 +2,6 @@
 #include "OpenH264VideoStreamPlayback.hpp"
 
 #include <godot_cpp/classes/file_access.hpp>
-#include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
 using namespace godot;
@@ -54,7 +53,6 @@ void OpenH264VideoStreamPlayback::set_file(const String &p_file) {
 }
 
 bool OpenH264VideoStreamPlayback::open_file() {
-    const String global = ProjectSettings::get_singleton()->globalize_path(file_path);
     file_data = FileAccess::get_file_as_bytes(file_path);
     if (file_data.is_empty()) {
         UtilityFunctions::printerr("[openh264] Cannot read file: ", file_path);
@@ -67,23 +65,26 @@ bool OpenH264VideoStreamPlayback::open_file() {
     }
     mp4_open = true;
 
-    // Find the first H.264 video track
+    // Find the first AVC (H.264) video track.
+    // object_type_indication 0x21 = AVC per ISO 14496-1.
     for (unsigned i = 0; i < mp4.track_count; ++i) {
-        if (mp4.track[i].handler_type == MP4D_HANDLER_TYPE_VIDE) {
-            // Only AVC (H.264) supported
-            if (mp4.track[i].object_type_indication == MP4_OBJECT_TYPE_AVC) {
-                track_idx     = (int)i;
-                total_samples = mp4.track[i].sample_count;
-                // fps from track timescale / duration per sample
-                if (total_samples > 0 && mp4.track[i].timescale > 0) {
-                    double total_dur = (double)mp4.track[i].duration_hi;
-                    total_dur        = total_dur * (double)(1ull << 32);
-                    total_dur       += (double)mp4.track[i].duration_lo;
-                    frame_time       = (total_dur / mp4.track[i].timescale) / total_samples;
-                }
-                break;
-            }
+        const auto &t = mp4.track[i];
+        if (t.handler_type != MP4D_HANDLER_TYPE_VIDE) {
+            continue;
         }
+        if (t.object_type_indication != 0x21) {
+            continue;
+        }
+        track_idx     = (int)i;
+        total_samples = t.sample_count;
+
+        // Compute per-frame duration from total track duration / sample count.
+        if (total_samples > 0 && t.timescale > 0) {
+            double total_dur = (double)t.duration_hi * (double)(1ull << 32)
+                             + (double)t.duration_lo;
+            frame_time = (total_dur / t.timescale) / total_samples;
+        }
+        break;
     }
 
     if (track_idx < 0) {
@@ -94,6 +95,10 @@ bool OpenH264VideoStreamPlayback::open_file() {
     if (decoder.init() != OK) {
         return false;
     }
+
+    // Feed SPS and PPS from the avcC box to the decoder before any frame.
+    // Without this the decoder cannot output any picture.
+    _send_sps_pps();
 
     sample_idx = 0;
     return true;
@@ -108,6 +113,48 @@ void OpenH264VideoStreamPlayback::close_file() {
     file_data = PackedByteArray();
     track_idx  = -1;
     sample_idx = 0;
+}
+
+// ---------------------------------------------------------------------------
+// SPS / PPS initialization
+// ---------------------------------------------------------------------------
+
+void OpenH264VideoStreamPlayback::_send_sps_pps() {
+    // MP4D_read_sps / MP4D_read_pps return pointers into the in-memory file data.
+    // We wrap each NAL in an Annex-B start code and feed it to the decoder.
+    for (int idx = 0; ; ++idx) {
+        int sps_size = 0;
+        const uint8_t *sps = static_cast<const uint8_t *>(
+                MP4D_read_sps(&mp4, track_idx, idx, &sps_size));
+        if (!sps || sps_size <= 0) {
+            break;
+        }
+        PackedByteArray nal;
+        for (uint8_t b : START_CODE) {
+            nal.append(b);
+        }
+        for (int i = 0; i < sps_size; ++i) {
+            nal.append(sps[i]);
+        }
+        decoder.decode_nal(nal.ptr(), nal.size()); // output ignored — no picture yet
+    }
+
+    for (int idx = 0; ; ++idx) {
+        int pps_size = 0;
+        const uint8_t *pps = static_cast<const uint8_t *>(
+                MP4D_read_pps(&mp4, track_idx, idx, &pps_size));
+        if (!pps || pps_size <= 0) {
+            break;
+        }
+        PackedByteArray nal;
+        for (uint8_t b : START_CODE) {
+            nal.append(b);
+        }
+        for (int i = 0; i < pps_size; ++i) {
+            nal.append(pps[i]);
+        }
+        decoder.decode_nal(nal.ptr(), nal.size());
+    }
 }
 
 // ---------------------------------------------------------------------------

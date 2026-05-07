@@ -47,6 +47,9 @@ class OpenH264VideoStreamPlayback : public VideoStreamPlayback {
     bool open_file();
     void close_file();
 
+    // Feed SPS/PPS from avcC box to decoder before the first frame
+    void _send_sps_pps();
+
     // Decode next frame and update texture
     void advance_frame();
 
