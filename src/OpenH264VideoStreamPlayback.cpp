@@ -110,9 +110,11 @@ void OpenH264VideoStreamPlayback::close_file() {
         MP4D_close(&mp4);
         mp4_open = false;
     }
-    file_data = PackedByteArray();
-    track_idx  = -1;
-    sample_idx = 0;
+    file_data           = PackedByteArray();
+    pending_frame       = Ref<Image>();
+    texture_initialized = false;
+    track_idx           = -1;
+    sample_idx          = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -209,7 +211,7 @@ void OpenH264VideoStreamPlayback::advance_frame() {
 
     Ref<Image> img = decoder.decode_nal(annexb.ptr(), annexb.size());
     if (img.is_valid()) {
-        texture->set_image(img);
+        pending_frame = img; // texture upload is done in _update()
     }
 
     ++sample_idx;
@@ -285,10 +287,23 @@ void OpenH264VideoStreamPlayback::_update(double p_delta) {
 
     time += p_delta;
 
-    // Decode all frames that fall within the elapsed time window
+    // Decode frames that fall within the elapsed time window.
     while (frame_time > 0.0 && sample_idx < total_samples &&
            (double)sample_idx * frame_time <= time) {
         advance_frame();
+    }
+
+    // Upload the latest decoded frame to the GPU once per _update() call.
+    // Use set_image() on first frame (allocates texture), update() thereafter
+    // (in-place update, no reallocation — significantly cheaper for video).
+    if (pending_frame.is_valid()) {
+        if (!texture_initialized) {
+            texture->set_image(pending_frame);
+            texture_initialized = true;
+        } else {
+            texture->update(pending_frame);
+        }
+        pending_frame = Ref<Image>(); // release reference
     }
 
     // Loop

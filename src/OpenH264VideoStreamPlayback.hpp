@@ -40,6 +40,8 @@ class OpenH264VideoStreamPlayback : public VideoStreamPlayback {
     double           time       = 0.0;
     double           frame_time = 0.0; // seconds per frame (1/fps)
     Ref<ImageTexture> texture;
+    Ref<Image>        pending_frame;      // latest decoded frame, uploaded in _update()
+    bool              texture_initialized = false;
 
     // minimp4 IO callback (static trampoline)
     static int mp4_read_cb(int64_t offset, void *buf, size_t size, void *token);
