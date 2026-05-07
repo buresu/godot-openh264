@@ -52,6 +52,7 @@ target_include_directories(GodotOpenH264 PRIVATE
     ${PROJECT_SOURCE_DIR}/lib/godot-cpp/gen/include
     ${PROJECT_SOURCE_DIR}/lib/openh264/codec/api/wels
     ${PROJECT_SOURCE_DIR}/lib/minimp4
+    ${PROJECT_SOURCE_DIR}/lib/bzip2
     ${PROJECT_SOURCE_DIR}/lib/libyuv/include
 )
 
