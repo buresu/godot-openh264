@@ -1,10 +1,10 @@
-#include "OpenH264Loader.hpp"
+#include "OpenH264.hpp"
 
 #include <godot_cpp/classes/dir_access.hpp>
+#include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/hashing_context.hpp>
 #include <godot_cpp/classes/http_client.hpp>
-#include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/os.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/classes/worker_thread_pool.hpp>
@@ -13,6 +13,7 @@
 
 #include <bzlib.h>
 #include <cstdio>
+#include <libyuv.h>
 
 #if defined(_WIN32)
 #  define WIN32_LEAN_AND_MEAN
@@ -23,41 +24,45 @@
 
 using namespace godot;
 
-OpenH264Loader *OpenH264Loader::_singleton = nullptr;
+OpenH264 *OpenH264::_singleton = nullptr;
 
-OpenH264Loader::OpenH264Loader() {
+OpenH264::OpenH264() {
     _singleton = this;
     _start_background_download();
 }
 
-OpenH264Loader::~OpenH264Loader() {
+OpenH264::~OpenH264() {
+    uninit_decoder();
     _unload_library();
     _singleton = nullptr;
 }
 
-OpenH264Loader *OpenH264Loader::get_singleton() {
+OpenH264 *OpenH264::get_singleton() {
     return _singleton;
 }
 
-void OpenH264Loader::_bind_methods() {
-    ClassDB::bind_method(D_METHOD("is_loaded"), &OpenH264Loader::is_loaded);
-    ClassDB::bind_method(D_METHOD("is_downloaded"), &OpenH264Loader::is_downloaded);
-    ClassDB::bind_method(D_METHOD("is_enabled"), &OpenH264Loader::is_enabled);
-    ClassDB::bind_method(D_METHOD("set_enabled", "enabled"), &OpenH264Loader::set_enabled);
+void OpenH264::_bind_methods() {
+    ClassDB::bind_method(D_METHOD("is_loaded"), &OpenH264::is_loaded);
+    ClassDB::bind_method(D_METHOD("is_downloaded"), &OpenH264::is_downloaded);
+    ClassDB::bind_method(D_METHOD("is_enabled"), &OpenH264::is_enabled);
+    ClassDB::bind_method(D_METHOD("set_enabled", "enabled"), &OpenH264::set_enabled);
     ClassDB::bind_method(D_METHOD("_background_download_task"),
-                         &OpenH264Loader::_background_download_task);
-    ClassDB::bind_method(D_METHOD("_load_library_task"),
-                         &OpenH264Loader::_load_library_task);
+                         &OpenH264::_background_download_task);
+    ClassDB::bind_method(D_METHOD("_load_library_task"), &OpenH264::_load_library_task);
     ClassDB::bind_method(D_METHOD("_on_download_complete", "error"),
-                         &OpenH264Loader::_on_download_complete);
+                         &OpenH264::_on_download_complete);
     ClassDB::bind_method(D_METHOD("_on_library_load_complete", "error"),
-                         &OpenH264Loader::_on_library_load_complete);
+                         &OpenH264::_on_library_load_complete);
 
     ADD_PROPERTY(PropertyInfo(Variant::BOOL, "enabled"), "set_enabled", "is_enabled");
     ADD_SIGNAL(MethodInfo("library_ready", PropertyInfo(Variant::INT, "error")));
 }
 
-String OpenH264Loader::_get_lib_filename() const {
+// ---------------------------------------------------------------------------
+// Library management
+// ---------------------------------------------------------------------------
+
+String OpenH264::_get_lib_filename() const {
 #if defined(_WIN32)
 #  if defined(__aarch64__)
     return String("openh264-") + OPENH264_VERSION + "-arm64.dll";
@@ -75,44 +80,43 @@ String OpenH264Loader::_get_lib_filename() const {
 #endif
 }
 
-String OpenH264Loader::_get_bz2_filename() const {
+String OpenH264::_get_bz2_filename() const {
     return _get_lib_filename() + ".bz2";
 }
 
-String OpenH264Loader::_get_lib_user_path() const {
+String OpenH264::_get_lib_user_path() const {
     return String("user://openh264/") + _get_lib_filename();
 }
 
-String OpenH264Loader::_get_cdn_url() const {
+String OpenH264::_get_cdn_url() const {
     return String("http://ciscobinary.openh264.org/") + _get_bz2_filename();
 }
 
-String OpenH264Loader::_get_md5_url() const {
+String OpenH264::_get_md5_url() const {
     return String("http://ciscobinary.openh264.org/") + _get_lib_filename() + ".signed.md5.txt";
 }
 
-String OpenH264Loader::_get_license_url() const {
+String OpenH264::_get_license_url() const {
     return "http://www.openh264.org/BINARY_LICENSE.txt";
 }
 
-String OpenH264Loader::_get_license_user_path() const {
+String OpenH264::_get_license_user_path() const {
     return "user://openh264/BINARY_LICENSE.txt";
 }
 
-void OpenH264Loader::_start_background_download() {
+void OpenH264::_start_background_download() {
     WorkerThreadPool::get_singleton()->add_task(
             Callable(this, "_background_download_task"),
             false,
             "openh264_load");
 }
 
-void OpenH264Loader::_background_download_task() {
+void OpenH264::_background_download_task() {
     const String lib_path = _get_lib_user_path();
 
     DirAccess::make_dir_recursive_absolute(
             OS::get_singleton()->get_user_data_dir() + "/openh264");
 
-    // Download license file if not already present
     const String license_path = _get_license_user_path();
     if (!FileAccess::file_exists(license_path)) {
         UtilityFunctions::print("[openh264] Downloading license: ", _get_license_url());
@@ -175,13 +179,13 @@ void OpenH264Loader::_background_download_task() {
     call_deferred("_on_download_complete", (int)OK);
 }
 
-void OpenH264Loader::_load_library_task() {
+void OpenH264::_load_library_task() {
     Error err = _load_library();
     call_deferred("_on_library_load_complete", (int)err);
 }
 
-void OpenH264Loader::_unload_library() {
-        if (_lib_handle) {
+void OpenH264::_unload_library() {
+    if (_lib_handle) {
 #if defined(_WIN32)
         FreeLibrary(static_cast<HMODULE>(_lib_handle));
 #else
@@ -192,7 +196,7 @@ void OpenH264Loader::_unload_library() {
     }
 }
 
-PackedByteArray OpenH264Loader::_download_bytes(const String &url) const {
+PackedByteArray OpenH264::_download_bytes(const String &url) const {
     String stripped = url.trim_prefix("http://").trim_prefix("https://");
     int    slash    = stripped.find("/");
     if (slash < 0) {
@@ -254,7 +258,7 @@ PackedByteArray OpenH264Loader::_download_bytes(const String &url) const {
     return result;
 }
 
-PackedByteArray OpenH264Loader::_compute_md5(const PackedByteArray &data) const {
+PackedByteArray OpenH264::_compute_md5(const PackedByteArray &data) const {
     Ref<HashingContext> ctx;
     ctx.instantiate();
     ctx->start(HashingContext::HASH_MD5);
@@ -262,8 +266,8 @@ PackedByteArray OpenH264Loader::_compute_md5(const PackedByteArray &data) const 
     return ctx->finish();
 }
 
-bool OpenH264Loader::_verify_md5(const PackedByteArray &data,
-                                  const PackedByteArray &signed_md5_txt) const {
+bool OpenH264::_verify_md5(const PackedByteArray &data,
+                            const PackedByteArray &signed_md5_txt) const {
     String txt = String::utf8(reinterpret_cast<const char *>(signed_md5_txt.ptr()),
                               signed_md5_txt.size()).strip_edges();
 
@@ -291,8 +295,8 @@ bool OpenH264Loader::_verify_md5(const PackedByteArray &data,
     return actual == expected;
 }
 
-Error OpenH264Loader::_extract_and_save(const PackedByteArray &bz2_data,
-                                         const String &dst_path) const {
+Error OpenH264::_extract_and_save(const PackedByteArray &bz2_data,
+                                   const String &dst_path) const {
     const unsigned int max_out = 32 * 1024 * 1024;
     PackedByteArray    out;
     out.resize(max_out);
@@ -323,7 +327,7 @@ Error OpenH264Loader::_extract_and_save(const PackedByteArray &bz2_data,
     return OK;
 }
 
-Error OpenH264Loader::_load_library() {
+Error OpenH264::_load_library() {
     const String lib_path_global =
             ProjectSettings::get_singleton()->globalize_path(_get_lib_user_path());
 
@@ -353,7 +357,7 @@ Error OpenH264Loader::_load_library() {
     return OK;
 }
 
-void OpenH264Loader::set_enabled(bool p_enabled) {
+void OpenH264::set_enabled(bool p_enabled) {
     if (_enabled == p_enabled) {
         return;
     }
@@ -368,7 +372,7 @@ void OpenH264Loader::set_enabled(bool p_enabled) {
     }
 }
 
-void OpenH264Loader::_on_download_complete(int error) {
+void OpenH264::_on_download_complete(int error) {
     _downloaded = true;
     if (error == OK && _enabled) {
         WorkerThreadPool::get_singleton()->add_task(
@@ -382,11 +386,11 @@ void OpenH264Loader::_on_download_complete(int error) {
     }
 }
 
-void OpenH264Loader::_on_library_load_complete(int error) {
+void OpenH264::_on_library_load_complete(int error) {
     emit_signal("library_ready", error);
 }
 
-void *OpenH264Loader::_get_proc(const String &name) const {
+void *OpenH264::_get_proc(const String &name) const {
     if (!_lib_handle) {
         return nullptr;
     }
@@ -396,4 +400,83 @@ void *OpenH264Loader::_get_proc(const String &name) const {
 #else
     return dlsym(_lib_handle, name.utf8().get_data());
 #endif
+}
+
+Error OpenH264::init_decoder() {
+    if (!is_loaded()) {
+        UtilityFunctions::printerr("[openh264] Library not ready");
+        return ERR_UNCONFIGURED;
+    }
+
+    long ret = _fn_create_decoder(&_decoder);
+    if (ret != 0 || !_decoder) {
+        UtilityFunctions::printerr("[openh264] WelsCreateDecoder failed: ", (int64_t)ret);
+        return FAILED;
+    }
+
+    SDecodingParam param{};
+    param.sVideoProperty.eVideoBsType = VIDEO_BITSTREAM_DEFAULT;
+    param.bParseOnly                  = false;
+
+    ret = _decoder->Initialize(&param);
+    if (ret != 0) {
+        UtilityFunctions::printerr("[openh264] Initialize failed: ", (int64_t)ret);
+        _fn_destroy_decoder(_decoder);
+        _decoder = nullptr;
+        return FAILED;
+    }
+
+    return OK;
+}
+
+void OpenH264::uninit_decoder() {
+    if (!_decoder) {
+        return;
+    }
+    _decoder->Uninitialize();
+    if (_fn_destroy_decoder) {
+        _fn_destroy_decoder(_decoder);
+    }
+    _decoder = nullptr;
+}
+
+Ref<Image> OpenH264::decode_nal(const uint8_t *data, int size) {
+    if (!_decoder) {
+        return {};
+    }
+
+    uint8_t     *yuv[3] = {};
+    SBufferInfo  buf_info{};
+
+    DECODING_STATE state = _decoder->DecodeFrameNoDelay(data, size, yuv, &buf_info);
+    if (state != dsErrorFree || buf_info.iBufferStatus != 1) {
+        return {};
+    }
+
+    return _yuv420_to_image(buf_info, yuv);
+}
+
+Ref<Image> OpenH264::decode_flush() {
+    return decode_nal(nullptr, 0);
+}
+
+Ref<Image> OpenH264::_yuv420_to_image(const SBufferInfo &info,
+                                       uint8_t *const *yuv) const {
+    const SSysMEMBuffer &mem       = info.UsrData.sSystemBuffer;
+    const int            width     = mem.iWidth;
+    const int            height    = mem.iHeight;
+    const int            stride_y  = mem.iStride[0];
+    const int            stride_uv = mem.iStride[1];
+
+    PackedByteArray rgb;
+    rgb.resize(width * height * 3);
+
+    libyuv::I420ToRAW(
+            yuv[0], stride_y,
+            yuv[1], stride_uv,
+            yuv[2], stride_uv,
+            rgb.ptrw(), width * 3,
+            width, height);
+
+    return Image::create_from_data(width, height, false, Image::FORMAT_RGB8, rgb);
 }

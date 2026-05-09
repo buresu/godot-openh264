@@ -1,6 +1,5 @@
 #define MINIMP4_IMPLEMENTATION
 #include "VideoStreamPlaybackOpenH264.hpp"
-#include "OpenH264Loader.hpp"
 
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
@@ -67,7 +66,7 @@ bool VideoStreamPlaybackOpenH264::_open_file() {
         return false;
     }
 
-    if (_decoder.init() != OK) {
+    if (OpenH264::get_singleton()->init_decoder() != OK) {
         return false;
     }
 
@@ -77,7 +76,7 @@ bool VideoStreamPlaybackOpenH264::_open_file() {
 }
 
 void VideoStreamPlaybackOpenH264::_close_file() {
-    _decoder.uninit();
+    OpenH264::get_singleton()->uninit_decoder();
     if (_mp4_open) {
         MP4D_close(&_mp4);
         _mp4_open = false;
@@ -101,7 +100,7 @@ void VideoStreamPlaybackOpenH264::_send_sps_pps() {
         uint8_t *w = _annexb_buf.ptrw();
         memcpy(w, START_CODE, 4);
         memcpy(w + 4, sps, sps_size);
-        _decoder.decode_nal(_annexb_buf.ptr(), (int)_annexb_buf.size());
+        OpenH264::get_singleton()->decode_nal(_annexb_buf.ptr(), (int)_annexb_buf.size());
     }
 
     for (int idx = 0; ; ++idx) {
@@ -115,7 +114,7 @@ void VideoStreamPlaybackOpenH264::_send_sps_pps() {
         uint8_t *w = _annexb_buf.ptrw();
         memcpy(w, START_CODE, 4);
         memcpy(w + 4, pps, pps_size);
-        _decoder.decode_nal(_annexb_buf.ptr(), (int)_annexb_buf.size());
+        OpenH264::get_singleton()->decode_nal(_annexb_buf.ptr(), (int)_annexb_buf.size());
     }
 }
 
@@ -165,7 +164,7 @@ void VideoStreamPlaybackOpenH264::_advance_frame() {
 
     _annexb_buf.resize(written);
 
-    Ref<Image> img = _decoder.decode_nal(_annexb_buf.ptr(), (int)_annexb_buf.size());
+    Ref<Image> img = OpenH264::get_singleton()->decode_nal(_annexb_buf.ptr(), (int)_annexb_buf.size());
     if (img.is_valid()) {
         _pending_frame = img;
     }
@@ -225,7 +224,7 @@ void VideoStreamPlaybackOpenH264::_update(double p_delta) {
     if (!_playing || _paused) {
         return;
     }
-    if (!OpenH264Loader::get_singleton()->is_loaded()) {
+    if (!OpenH264::get_singleton()->is_loaded()) {
         return;
     }
     if (!_mp4_open) {

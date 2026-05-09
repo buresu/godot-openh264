@@ -1,6 +1,6 @@
 #include "register_types.hpp"
 
-#include "OpenH264Loader.hpp"
+#include "OpenH264.hpp"
 #include "VideoStreamOpenH264.hpp"
 #include "VideoStreamPlaybackOpenH264.hpp"
 
@@ -11,7 +11,7 @@
 
 using namespace godot;
 
-static OpenH264Loader *_openh264_loader = nullptr;
+static OpenH264 *_openh264 = nullptr;
 
 void initialize_openh264_module(ModuleInitializationLevel p_level) {
 
@@ -19,12 +19,12 @@ void initialize_openh264_module(ModuleInitializationLevel p_level) {
         return;
     }
 
-    ClassDB::register_class<OpenH264Loader>();
+    ClassDB::register_class<OpenH264>();
     ClassDB::register_class<VideoStreamOpenH264>();
     ClassDB::register_class<VideoStreamPlaybackOpenH264>();
 
-    _openh264_loader = memnew(OpenH264Loader);
-    Engine::get_singleton()->register_singleton("OpenH264Loader", _openh264_loader);
+    _openh264 = memnew(OpenH264);
+    Engine::get_singleton()->register_singleton("OpenH264", _openh264);
 }
 
 void uninitialize_openh264_module(ModuleInitializationLevel p_level) {
@@ -33,10 +33,10 @@ void uninitialize_openh264_module(ModuleInitializationLevel p_level) {
         return;
     }
 
-    if (_openh264_loader) {
-        Engine::get_singleton()->unregister_singleton("OpenH264Loader");
-        memdelete(_openh264_loader);
-        _openh264_loader = nullptr;
+    if (_openh264) {
+        Engine::get_singleton()->unregister_singleton("OpenH264");
+        memdelete(_openh264);
+        _openh264 = nullptr;
     }
 }
 

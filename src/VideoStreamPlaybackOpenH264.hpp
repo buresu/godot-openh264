@@ -1,6 +1,6 @@
 #pragma once
 
-#include "OpenH264Decoder.hpp"
+#include "OpenH264.hpp"
 
 #include <godot_cpp/classes/image_texture.hpp>
 #include <godot_cpp/classes/ref.hpp>
@@ -49,8 +49,6 @@ private:
 
     PackedByteArray _file_data;
     PackedByteArray _annexb_buf;
-
-    OpenH264Decoder     _decoder;
 
     String            _file_path;
     bool              _playing             = false;

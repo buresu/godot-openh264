@@ -23,7 +23,7 @@ http://www.openh264.org/BINARY_LICENSE.txt
 The OpenH264 binaries will be downloaded automatically, but OpenH264 is disabled by default.  
 Please enable the loader from the script.  
 ```
-OpenH264Loader.enabled = true
+OpenH264.enabled = true
 ```
 
 ## Build

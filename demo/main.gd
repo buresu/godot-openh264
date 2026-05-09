@@ -8,7 +8,7 @@ extends Node
 @onready var file_dialog: FileDialog = $UI/FileDialog
 
 func _ready() -> void:
-	OpenH264Loader.library_ready.connect(_on_library_ready)
+	OpenH264.library_ready.connect(_on_library_ready)
 
 	status_label.text = "OpenH264 is disabled. Press Enable to activate."
 	open_button.disabled = true
@@ -16,12 +16,12 @@ func _ready() -> void:
 func _on_enable_button_toggled(toggled_on: bool) -> void:
 	if toggled_on:
 		status_label.text = "Downloading / loading OpenH264..."
-		OpenH264Loader.enabled = true
+		OpenH264.enabled = true
 		open_button.disabled = false
 	else:
 		video_player.stop()
 		video_player.stream = null
-		OpenH264Loader.enabled = false
+		OpenH264.enabled = false
 		open_button.disabled = true
 
 func _on_library_ready(error: int) -> void:
