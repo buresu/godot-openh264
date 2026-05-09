@@ -4,6 +4,8 @@
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
+#include <libyuv.h>
+
 using namespace godot;
 
 constexpr uint8_t VideoStreamPlaybackOpenH264::START_CODE[4];
@@ -66,7 +68,7 @@ bool VideoStreamPlaybackOpenH264::_open_file() {
         return false;
     }
 
-    if (OpenH264::get_singleton()->init_decoder() != OK) {
+    if (OpenH264::get_singleton()->create_decoder(&_decoder) != OK) {
         return false;
     }
 
@@ -76,7 +78,10 @@ bool VideoStreamPlaybackOpenH264::_open_file() {
 }
 
 void VideoStreamPlaybackOpenH264::_close_file() {
-    OpenH264::get_singleton()->uninit_decoder();
+    if (_decoder) {
+        OpenH264::get_singleton()->destroy_decoder(_decoder);
+        _decoder = nullptr;
+    }
     if (_mp4_open) {
         MP4D_close(&_mp4);
         _mp4_open = false;
@@ -100,7 +105,7 @@ void VideoStreamPlaybackOpenH264::_send_sps_pps() {
         uint8_t *w = _annexb_buf.ptrw();
         memcpy(w, START_CODE, 4);
         memcpy(w + 4, sps, sps_size);
-        OpenH264::get_singleton()->decode_nal(_annexb_buf.ptr(), (int)_annexb_buf.size());
+        _decode_nal(_annexb_buf.ptr(), (int)_annexb_buf.size());
     }
 
     for (int idx = 0; ; ++idx) {
@@ -114,7 +119,7 @@ void VideoStreamPlaybackOpenH264::_send_sps_pps() {
         uint8_t *w = _annexb_buf.ptrw();
         memcpy(w, START_CODE, 4);
         memcpy(w + 4, pps, pps_size);
-        OpenH264::get_singleton()->decode_nal(_annexb_buf.ptr(), (int)_annexb_buf.size());
+        _decode_nal(_annexb_buf.ptr(), (int)_annexb_buf.size());
     }
 }
 
@@ -138,8 +143,8 @@ void VideoStreamPlaybackOpenH264::_advance_frame() {
     const uint8_t *raw = _file_data.ptr() + ofs;
 
     _annexb_buf.resize(size);
-    uint8_t *dst      = _annexb_buf.ptrw();
-    int      written  = 0;
+    uint8_t *dst       = _annexb_buf.ptrw();
+    int      written   = 0;
     size_t   remaining = size;
     const uint8_t *p   = raw;
 
@@ -164,17 +169,82 @@ void VideoStreamPlaybackOpenH264::_advance_frame() {
 
     _annexb_buf.resize(written);
 
-    Ref<Image> img;
-    if (_use_shader_decode) {
-        img = OpenH264::get_singleton()->decode_nal_yuv(_annexb_buf.ptr(), (int)_annexb_buf.size());
-    } else {
-        img = OpenH264::get_singleton()->decode_nal(_annexb_buf.ptr(), (int)_annexb_buf.size());
-    }
+    Ref<Image> img = _decode_nal(_annexb_buf.ptr(), (int)_annexb_buf.size());
     if (img.is_valid()) {
         _pending_frame = img;
     }
 
     ++_sample_idx;
+}
+
+Ref<Image> VideoStreamPlaybackOpenH264::_decode_nal(const uint8_t *data, int size) {
+    if (!_decoder) {
+        return {};
+    }
+
+    uint8_t     *yuv[3] = {};
+    SBufferInfo  buf_info{};
+
+    DECODING_STATE state = _decoder->DecodeFrameNoDelay(data, size, yuv, &buf_info);
+    if (state != dsErrorFree || buf_info.iBufferStatus != 1) {
+        return {};
+    }
+
+    return _use_shader_decode ? _yuv420_to_yuv_image(buf_info, yuv)
+                              : _yuv420_to_rgb_image(buf_info, yuv);
+}
+
+Ref<Image> VideoStreamPlaybackOpenH264::_yuv420_to_rgb_image(const SBufferInfo &info,
+                                                               uint8_t *const *yuv) {
+    const SSysMEMBuffer &mem       = info.UsrData.sSystemBuffer;
+    const int            width     = mem.iWidth;
+    const int            height    = mem.iHeight;
+    const int            stride_y  = mem.iStride[0];
+    const int            stride_uv = mem.iStride[1];
+
+    PackedByteArray rgb;
+    rgb.resize(width * height * 3);
+
+    libyuv::I420ToRAW(
+            yuv[0], stride_y,
+            yuv[1], stride_uv,
+            yuv[2], stride_uv,
+            rgb.ptrw(), width * 3,
+            width, height);
+
+    return Image::create_from_data(width, height, false, Image::FORMAT_RGB8, rgb);
+}
+
+// Pack YUV420 into a single R8 texture: width x (height * 3/2)
+// Y plane: rows 0..height-1, full width
+// U plane: rows height..height+height/2-1, left half (width/2)
+// V plane: rows height..height+height/2-1, right half (width/2)
+Ref<Image> VideoStreamPlaybackOpenH264::_yuv420_to_yuv_image(const SBufferInfo &info,
+                                                               uint8_t *const *yuv) {
+    const SSysMEMBuffer &mem       = info.UsrData.sSystemBuffer;
+    const int            width     = mem.iWidth;
+    const int            height    = mem.iHeight;
+    const int            stride_y  = mem.iStride[0];
+    const int            stride_uv = mem.iStride[1];
+    const int            chroma_h  = height / 2;
+    const int            chroma_w  = width / 2;
+    const int            tex_h     = height + chroma_h;
+
+    PackedByteArray data;
+    data.resize(width * tex_h);
+    uint8_t *dst = data.ptrw();
+
+    for (int row = 0; row < height; ++row) {
+        memcpy(dst + row * width, yuv[0] + row * stride_y, width);
+    }
+
+    for (int row = 0; row < chroma_h; ++row) {
+        uint8_t *dst_row = dst + (height + row) * width;
+        memcpy(dst_row,            yuv[1] + row * stride_uv, chroma_w);
+        memcpy(dst_row + chroma_w, yuv[2] + row * stride_uv, chroma_w);
+    }
+
+    return Image::create_from_data(width, tex_h, false, Image::FORMAT_R8, data);
 }
 
 void VideoStreamPlaybackOpenH264::_play() {

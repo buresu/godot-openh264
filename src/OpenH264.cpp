@@ -13,7 +13,6 @@
 
 #include <bzlib.h>
 #include <cstdio>
-#include <libyuv.h>
 
 #if defined(_WIN32)
 #  define WIN32_LEAN_AND_MEAN
@@ -32,7 +31,6 @@ OpenH264::OpenH264() {
 }
 
 OpenH264::~OpenH264() {
-    uninit_decoder();
     _unload_library();
     _singleton = nullptr;
 }
@@ -46,13 +44,10 @@ void OpenH264::_bind_methods() {
     ClassDB::bind_method(D_METHOD("is_downloaded"), &OpenH264::is_downloaded);
     ClassDB::bind_method(D_METHOD("is_enabled"), &OpenH264::is_enabled);
     ClassDB::bind_method(D_METHOD("set_enabled", "enabled"), &OpenH264::set_enabled);
-    ClassDB::bind_method(D_METHOD("_background_download_task"),
-                         &OpenH264::_background_download_task);
+    ClassDB::bind_method(D_METHOD("_background_download_task"), &OpenH264::_background_download_task);
     ClassDB::bind_method(D_METHOD("_load_library_task"), &OpenH264::_load_library_task);
-    ClassDB::bind_method(D_METHOD("_on_download_complete", "error"),
-                         &OpenH264::_on_download_complete);
-    ClassDB::bind_method(D_METHOD("_on_library_load_complete", "error"),
-                         &OpenH264::_on_library_load_complete);
+    ClassDB::bind_method(D_METHOD("_on_download_complete", "error"), &OpenH264::_on_download_complete);
+    ClassDB::bind_method(D_METHOD("_on_library_load_complete", "error"), &OpenH264::_on_library_load_complete);
 
     ADD_PROPERTY(PropertyInfo(Variant::BOOL, "enabled"), "set_enabled", "is_enabled");
     ADD_SIGNAL(MethodInfo("library_ready", PropertyInfo(Variant::INT, "error")));
@@ -402,14 +397,14 @@ void *OpenH264::_get_proc(const String &name) const {
 #endif
 }
 
-Error OpenH264::init_decoder() {
+Error OpenH264::create_decoder(ISVCDecoder **out) {
     if (!is_loaded()) {
         UtilityFunctions::printerr("[openh264] Library not ready");
         return ERR_UNCONFIGURED;
     }
 
-    long ret = _fn_create_decoder(&_decoder);
-    if (ret != 0 || !_decoder) {
+    long ret = _fn_create_decoder(out);
+    if (ret != 0 || !*out) {
         UtilityFunctions::printerr("[openh264] WelsCreateDecoder failed: ", (int64_t)ret);
         return FAILED;
     }
@@ -418,117 +413,23 @@ Error OpenH264::init_decoder() {
     param.sVideoProperty.eVideoBsType = VIDEO_BITSTREAM_DEFAULT;
     param.bParseOnly                  = false;
 
-    ret = _decoder->Initialize(&param);
+    ret = (*out)->Initialize(&param);
     if (ret != 0) {
         UtilityFunctions::printerr("[openh264] Initialize failed: ", (int64_t)ret);
-        _fn_destroy_decoder(_decoder);
-        _decoder = nullptr;
+        _fn_destroy_decoder(*out);
+        *out = nullptr;
         return FAILED;
     }
 
     return OK;
 }
 
-void OpenH264::uninit_decoder() {
-    if (!_decoder) {
+void OpenH264::destroy_decoder(ISVCDecoder *decoder) {
+    if (!decoder) {
         return;
     }
-    _decoder->Uninitialize();
+    decoder->Uninitialize();
     if (_fn_destroy_decoder) {
-        _fn_destroy_decoder(_decoder);
+        _fn_destroy_decoder(decoder);
     }
-    _decoder = nullptr;
-}
-
-Ref<Image> OpenH264::decode_nal(const uint8_t *data, int size) {
-    if (!_decoder) {
-        return {};
-    }
-
-    uint8_t     *yuv[3] = {};
-    SBufferInfo  buf_info{};
-
-    DECODING_STATE state = _decoder->DecodeFrameNoDelay(data, size, yuv, &buf_info);
-    if (state != dsErrorFree || buf_info.iBufferStatus != 1) {
-        return {};
-    }
-
-    return _yuv420_to_image(buf_info, yuv);
-}
-
-Ref<Image> OpenH264::decode_nal_yuv(const uint8_t *data, int size) {
-    if (!_decoder) {
-        return {};
-    }
-
-    uint8_t     *yuv[3] = {};
-    SBufferInfo  buf_info{};
-
-    DECODING_STATE state = _decoder->DecodeFrameNoDelay(data, size, yuv, &buf_info);
-    if (state != dsErrorFree || buf_info.iBufferStatus != 1) {
-        return {};
-    }
-
-    return _yuv420_to_yuv_image(buf_info, yuv);
-}
-
-Ref<Image> OpenH264::decode_flush() {
-    return decode_nal(nullptr, 0);
-}
-
-Ref<Image> OpenH264::decode_flush_yuv() {
-    return decode_nal_yuv(nullptr, 0);
-}
-
-Ref<Image> OpenH264::_yuv420_to_image(const SBufferInfo &info,
-                                       uint8_t *const *yuv) const {
-    const SSysMEMBuffer &mem       = info.UsrData.sSystemBuffer;
-    const int            width     = mem.iWidth;
-    const int            height    = mem.iHeight;
-    const int            stride_y  = mem.iStride[0];
-    const int            stride_uv = mem.iStride[1];
-
-    PackedByteArray rgb;
-    rgb.resize(width * height * 3);
-
-    libyuv::I420ToRAW(
-            yuv[0], stride_y,
-            yuv[1], stride_uv,
-            yuv[2], stride_uv,
-            rgb.ptrw(), width * 3,
-            width, height);
-
-    return Image::create_from_data(width, height, false, Image::FORMAT_RGB8, rgb);
-}
-
-// Pack YUV420 into a single R8 texture: width x (height * 3/2)
-// Y plane: rows 0..height-1, full width
-// U plane: rows height..height+height/2-1, left half (width/2)
-// V plane: rows height..height+height/2-1, right half (width/2)
-Ref<Image> OpenH264::_yuv420_to_yuv_image(const SBufferInfo &info,
-                                           uint8_t *const *yuv) const {
-    const SSysMEMBuffer &mem          = info.UsrData.sSystemBuffer;
-    const int            width        = mem.iWidth;
-    const int            height       = mem.iHeight;
-    const int            stride_y     = mem.iStride[0];
-    const int            stride_uv    = mem.iStride[1];
-    const int            chroma_h     = height / 2;
-    const int            chroma_w     = width / 2;
-    const int            tex_height   = height + chroma_h;
-
-    PackedByteArray data;
-    data.resize(width * tex_height);
-    uint8_t *dst = data.ptrw();
-
-    for (int row = 0; row < height; ++row) {
-        memcpy(dst + row * width, yuv[0] + row * stride_y, width);
-    }
-
-    for (int row = 0; row < chroma_h; ++row) {
-        uint8_t *dst_row = dst + (height + row) * width;
-        memcpy(dst_row,            yuv[1] + row * stride_uv, chroma_w);
-        memcpy(dst_row + chroma_w, yuv[2] + row * stride_uv, chroma_w);
-    }
-
-    return Image::create_from_data(width, tex_height, false, Image::FORMAT_R8, data);
 }

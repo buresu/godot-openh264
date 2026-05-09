@@ -1,13 +1,11 @@
 #pragma once
 
-#include <godot_cpp/classes/image.hpp>
 #include <godot_cpp/classes/object.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
 #include <godot_cpp/variant/string.hpp>
 
 #include "codec_api.h"
-#include "codec_app_def.h"
 
 using FnWelsCreateDecoder  = long (*)(ISVCDecoder **ppDecoder);
 using FnWelsDestroyDecoder = void (*)(ISVCDecoder *pDecoder);
@@ -18,28 +16,20 @@ class OpenH264 : public Object {
     GDCLASS(OpenH264, Object)
 
 public:
-    FnWelsCreateDecoder  _fn_create_decoder  = nullptr;
-    FnWelsDestroyDecoder _fn_destroy_decoder = nullptr;
-
     static OpenH264 *get_singleton();
 
     OpenH264();
     ~OpenH264() override;
 
     // Library management
-    bool is_loaded() const { return _lib_handle != nullptr; }
-    bool is_downloaded() const { return _downloaded; }
-    bool is_enabled() const { return _enabled; }
-    void set_enabled(bool p_enabled);
+    bool  is_loaded() const { return _lib_handle != nullptr; }
+    bool  is_downloaded() const { return _downloaded; }
+    bool  is_enabled() const { return _enabled; }
+    void  set_enabled(bool p_enabled);
 
-    // Decoder
-    Error      init_decoder();
-    Ref<Image> decode_nal(const uint8_t *data, int size);
-    Ref<Image> decode_nal_yuv(const uint8_t *data, int size);
-    Ref<Image> decode_flush();
-    Ref<Image> decode_flush_yuv();
-    void       uninit_decoder();
-    bool       is_decoder_initialized() const { return _decoder != nullptr; }
+    // Decoder factory — each caller owns its ISVCDecoder instance
+    Error create_decoder(ISVCDecoder **out);
+    void  destroy_decoder(ISVCDecoder *decoder);
 
 protected:
     static void _bind_methods();
@@ -54,8 +44,8 @@ private:
     bool  _downloaded = false;
     void *_lib_handle = nullptr;
 
-    // Decoder state
-    ISVCDecoder *_decoder = nullptr;
+    FnWelsCreateDecoder  _fn_create_decoder  = nullptr;
+    FnWelsDestroyDecoder _fn_destroy_decoder = nullptr;
 
     // Library helpers
     String _get_lib_filename() const;
@@ -82,12 +72,6 @@ private:
     void  _on_download_complete(int error);
     void  _on_library_load_complete(int error);
     void *_get_proc(const String &name) const;
-
-    // Decoder helpers
-    Ref<Image> _yuv420_to_image(const SBufferInfo &buf_info,
-                                uint8_t *const *yuv_planes) const;
-    Ref<Image> _yuv420_to_yuv_image(const SBufferInfo &buf_info,
-                                    uint8_t *const *yuv_planes) const;
 };
 
 } // namespace godot

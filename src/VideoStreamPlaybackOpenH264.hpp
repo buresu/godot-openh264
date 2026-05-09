@@ -2,11 +2,15 @@
 
 #include "OpenH264.hpp"
 
+#include <godot_cpp/classes/image.hpp>
 #include <godot_cpp/classes/image_texture.hpp>
 #include <godot_cpp/classes/ref.hpp>
 #include <godot_cpp/classes/video_stream_playback.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
 #include <godot_cpp/variant/string.hpp>
+
+#include "codec_api.h"
+#include "codec_app_def.h"
 
 #define MP4D_64BIT_SUPPORTED 1
 #include <minimp4.h>
@@ -51,6 +55,8 @@ private:
     PackedByteArray _file_data;
     PackedByteArray _annexb_buf;
 
+    ISVCDecoder *_decoder = nullptr;
+
     String            _file_path;
     bool              _use_shader_decode   = false;
     bool              _playing             = false;
@@ -67,6 +73,11 @@ private:
     void _close_file();
     void _send_sps_pps();
     void _advance_frame();
+
+    Ref<Image> _decode_nal(const uint8_t *data, int size);
+
+    static Ref<Image> _yuv420_to_rgb_image(const SBufferInfo &info, uint8_t *const *yuv);
+    static Ref<Image> _yuv420_to_yuv_image(const SBufferInfo &info, uint8_t *const *yuv);
 };
 
 } // namespace godot
