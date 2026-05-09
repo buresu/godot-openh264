@@ -456,8 +456,28 @@ Ref<Image> OpenH264::decode_nal(const uint8_t *data, int size) {
     return _yuv420_to_image(buf_info, yuv);
 }
 
+Ref<Image> OpenH264::decode_nal_yuv(const uint8_t *data, int size) {
+    if (!_decoder) {
+        return {};
+    }
+
+    uint8_t     *yuv[3] = {};
+    SBufferInfo  buf_info{};
+
+    DECODING_STATE state = _decoder->DecodeFrameNoDelay(data, size, yuv, &buf_info);
+    if (state != dsErrorFree || buf_info.iBufferStatus != 1) {
+        return {};
+    }
+
+    return _yuv420_to_yuv_image(buf_info, yuv);
+}
+
 Ref<Image> OpenH264::decode_flush() {
     return decode_nal(nullptr, 0);
+}
+
+Ref<Image> OpenH264::decode_flush_yuv() {
+    return decode_nal_yuv(nullptr, 0);
 }
 
 Ref<Image> OpenH264::_yuv420_to_image(const SBufferInfo &info,
@@ -479,4 +499,36 @@ Ref<Image> OpenH264::_yuv420_to_image(const SBufferInfo &info,
             width, height);
 
     return Image::create_from_data(width, height, false, Image::FORMAT_RGB8, rgb);
+}
+
+// Pack YUV420 into a single R8 texture: width x (height * 3/2)
+// Y plane: rows 0..height-1, full width
+// U plane: rows height..height+height/2-1, left half (width/2)
+// V plane: rows height..height+height/2-1, right half (width/2)
+Ref<Image> OpenH264::_yuv420_to_yuv_image(const SBufferInfo &info,
+                                           uint8_t *const *yuv) const {
+    const SSysMEMBuffer &mem          = info.UsrData.sSystemBuffer;
+    const int            width        = mem.iWidth;
+    const int            height       = mem.iHeight;
+    const int            stride_y     = mem.iStride[0];
+    const int            stride_uv    = mem.iStride[1];
+    const int            chroma_h     = height / 2;
+    const int            chroma_w     = width / 2;
+    const int            tex_height   = height + chroma_h;
+
+    PackedByteArray data;
+    data.resize(width * tex_height);
+    uint8_t *dst = data.ptrw();
+
+    for (int row = 0; row < height; ++row) {
+        memcpy(dst + row * width, yuv[0] + row * stride_y, width);
+    }
+
+    for (int row = 0; row < chroma_h; ++row) {
+        uint8_t *dst_row = dst + (height + row) * width;
+        memcpy(dst_row,            yuv[1] + row * stride_uv, chroma_w);
+        memcpy(dst_row + chroma_w, yuv[2] + row * stride_uv, chroma_w);
+    }
+
+    return Image::create_from_data(width, tex_height, false, Image::FORMAT_R8, data);
 }

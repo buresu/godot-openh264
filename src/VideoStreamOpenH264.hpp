@@ -13,8 +13,14 @@ class VideoStreamOpenH264 : public VideoStream {
 public:
     Ref<VideoStreamPlayback> _instantiate_playback() override;
 
+    bool get_use_shader_decode() const { return _use_shader_decode; }
+    void set_use_shader_decode(bool p_use) { _use_shader_decode = p_use; }
+
 protected:
     static void _bind_methods();
+
+private:
+    bool _use_shader_decode = false;
 };
 
 } // namespace godot

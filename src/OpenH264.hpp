@@ -35,7 +35,9 @@ public:
     // Decoder
     Error      init_decoder();
     Ref<Image> decode_nal(const uint8_t *data, int size);
+    Ref<Image> decode_nal_yuv(const uint8_t *data, int size);
     Ref<Image> decode_flush();
+    Ref<Image> decode_flush_yuv();
     void       uninit_decoder();
     bool       is_decoder_initialized() const { return _decoder != nullptr; }
 
@@ -84,6 +86,8 @@ private:
     // Decoder helpers
     Ref<Image> _yuv420_to_image(const SBufferInfo &buf_info,
                                 uint8_t *const *yuv_planes) const;
+    Ref<Image> _yuv420_to_yuv_image(const SBufferInfo &buf_info,
+                                    uint8_t *const *yuv_planes) const;
 };
 
 } // namespace godot

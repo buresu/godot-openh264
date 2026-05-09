@@ -5,7 +5,10 @@ extends Node
 @onready var license_label: Label = $UI/LicenseLabel
 @onready var enable_button: Button = $UI/EnableButton
 @onready var open_button: Button = $UI/OpenButton
+@onready var shader_decode_button: CheckButton = $UI/ShaderDecodeButton
 @onready var file_dialog: FileDialog = $UI/FileDialog
+
+var _use_shader_decode: bool = true
 
 func _ready() -> void:
 	OpenH264.library_ready.connect(_on_library_ready)
@@ -28,6 +31,7 @@ func _on_library_ready(error: int) -> void:
 	if error == OK:
 		status_label.text = "OpenH264 ready — open an MP4 file to play."
 		open_button.disabled = false
+		shader_decode_button.disabled = false
 	else:
 		status_label.text = "OpenH264 failed to load (error %d)." % error
 		enable_button.disabled = false
@@ -35,12 +39,25 @@ func _on_library_ready(error: int) -> void:
 func _on_open_button_pressed() -> void:
 	file_dialog.popup_centered_ratio(0.7)
 
+func _on_shader_decode_button_toggled(toggled_on: bool) -> void:
+	_use_shader_decode = toggled_on
+
 func _on_file_dialog_file_selected(path: String) -> void:
 	video_player.stop()
 
 	var stream := VideoStreamOpenH264.new()
 	stream.file = path
+	stream.use_shader_decode = _use_shader_decode
 	video_player.stream = stream
 	video_player.play()
 
+	if _use_shader_decode:
+		var shader := load("res://addons/godot-openh264/yuv420_decode.gdshader") as Shader
+		var mat := ShaderMaterial.new()
+		mat.shader = shader
+		video_player.material = mat
+	else:
+		video_player.material = null
+
+	shader_decode_button.disabled = true
 	status_label.text = "Playing: %s" % path.get_file()

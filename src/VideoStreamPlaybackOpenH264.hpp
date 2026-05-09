@@ -21,6 +21,7 @@ public:
     ~VideoStreamPlaybackOpenH264() override;
 
     void set_file(const String &p_file);
+    void set_use_shader_decode(bool p_use) { _use_shader_decode = p_use; }
 
     void   _play() override;
     void   _stop() override;
@@ -51,6 +52,7 @@ private:
     PackedByteArray _annexb_buf;
 
     String            _file_path;
+    bool              _use_shader_decode   = false;
     bool              _playing             = false;
     bool              _paused              = false;
     double            _time                = 0.0;

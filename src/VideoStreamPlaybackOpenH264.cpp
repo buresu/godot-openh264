@@ -164,7 +164,12 @@ void VideoStreamPlaybackOpenH264::_advance_frame() {
 
     _annexb_buf.resize(written);
 
-    Ref<Image> img = OpenH264::get_singleton()->decode_nal(_annexb_buf.ptr(), (int)_annexb_buf.size());
+    Ref<Image> img;
+    if (_use_shader_decode) {
+        img = OpenH264::get_singleton()->decode_nal_yuv(_annexb_buf.ptr(), (int)_annexb_buf.size());
+    } else {
+        img = OpenH264::get_singleton()->decode_nal(_annexb_buf.ptr(), (int)_annexb_buf.size());
+    }
     if (img.is_valid()) {
         _pending_frame = img;
     }
