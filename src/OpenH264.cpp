@@ -410,8 +410,10 @@ Error OpenH264::create_decoder(ISVCDecoder **out) {
     }
 
     SDecodingParam param{};
-    param.sVideoProperty.eVideoBsType = VIDEO_BITSTREAM_DEFAULT;
-    param.bParseOnly                  = false;
+    param.sVideoProperty.eVideoBsType = VIDEO_BITSTREAM_AVC;
+    param.bParseOnly = false;
+    param.uiCpuLoad = 0;
+    param.eEcActiveIdc = ERROR_CON_SLICE_COPY;
 
     ret = (*out)->Initialize(&param);
     if (ret != 0) {
