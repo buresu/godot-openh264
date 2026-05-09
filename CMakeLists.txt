@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
-project(godot-openh264 LANGUAGES CXX)
+project(godot-openh264 VERSION 1.1.0)
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build type" FORCE)
