@@ -2,6 +2,7 @@
 #include "VideoStreamPlaybackOpenH264.hpp"
 
 #include <godot_cpp/classes/file_access.hpp>
+#include <godot_cpp/classes/os.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <libyuv.h>
@@ -71,6 +72,13 @@ bool VideoStreamPlaybackOpenH264::_open_file() {
     if (OpenH264::get_singleton()->create_decoder(&_decoder) != OK) {
         return false;
     }
+
+    // FIXME: Can not set thread count
+    // int slices      = _detect_first_frame_slice_count();
+    // int max_threads = MAX(1, OS::get_singleton()->get_processor_count() / 2);
+    // int threads     = slices <= 1 ? 1 : MIN(slices, max_threads);
+    // UtilityFunctions::print("[openh264] Threads:", threads);
+    //_decoder->SetOption(DECODER_OPTION_NUM_OF_THREADS, &threads);
 
     _send_sps_pps();
     _sample_idx = 0;
@@ -175,6 +183,44 @@ void VideoStreamPlaybackOpenH264::_advance_frame() {
     }
 
     ++_sample_idx;
+}
+
+// Read first sample's AVCC NALs directly to count slice NAL types (1=non-IDR, 5=IDR)
+// before any decode happens, so SetOption is safe to call.
+int VideoStreamPlaybackOpenH264::_detect_first_frame_slice_count() const {
+    if (_track_idx < 0 || _total_samples == 0) {
+        return 1;
+    }
+
+    unsigned           ofs_size = 0, ts_ms = 0, dur_ms = 0;
+    MP4D_file_offset_t ofs = MP4D_frame_offset(
+            &_mp4, _track_idx, 0, &ofs_size, &ts_ms, &dur_ms);
+
+    if (ofs_size == 0 || ofs + ofs_size > (MP4D_file_offset_t)_file_data.size()) {
+        return 1;
+    }
+
+    const uint8_t *p         = _file_data.ptr() + ofs;
+    size_t         remaining  = ofs_size;
+    int            slices     = 0;
+
+    while (remaining >= 4) {
+        uint32_t nal_size = ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+                            ((uint32_t)p[2] << 8)  |  (uint32_t)p[3];
+        p         += 4;
+        remaining -= 4;
+        if (nal_size == 0 || nal_size > remaining) {
+            break;
+        }
+        uint8_t nal_type = p[0] & 0x1F;
+        if (nal_type == 1 || nal_type == 5) {
+            ++slices;
+        }
+        p         += nal_size;
+        remaining -= nal_size;
+    }
+
+    return slices > 0 ? slices : 1;
 }
 
 Ref<Image> VideoStreamPlaybackOpenH264::_decode_nal(const uint8_t *data, int size) {

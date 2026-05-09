@@ -75,6 +75,7 @@ private:
     void _advance_frame();
 
     Ref<Image> _decode_nal(const uint8_t *data, int size);
+    int        _detect_first_frame_slice_count() const;
 
     static Ref<Image> _yuv420_to_rgb_image(const SBufferInfo &info, uint8_t *const *yuv);
     static Ref<Image> _yuv420_to_yuv_image(const SBufferInfo &info, uint8_t *const *yuv);
