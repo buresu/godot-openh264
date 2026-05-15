@@ -20,9 +20,16 @@ http://www.openh264.org/BINARY_LICENSE.txt
 
 ## How to use
 
-The OpenH264 binaries will be downloaded automatically, but OpenH264 is disabled by default.  
-Please enable the loader from the script.  
+OpenH264 is disabled by default. Enable it from your script when your app is
+ready to use H.264 playback. If the OpenH264 binary is not cached yet, it will
+be downloaded at that point and loaded after the download completes.
 ```
+OpenH264.library_ready.connect(func(error: int) -> void:
+    if error == OK:
+        # OpenH264 is ready.
+        pass
+)
+
 OpenH264.enabled = true
 ```
 

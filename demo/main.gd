@@ -20,7 +20,7 @@ func _on_enable_button_toggled(toggled_on: bool) -> void:
 	if toggled_on:
 		status_label.text = "Downloading / loading OpenH264..."
 		OpenH264.enabled = true
-		open_button.disabled = false
+		open_button.disabled = true
 	else:
 		video_player.stop()
 		video_player.stream = null

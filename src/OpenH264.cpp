@@ -27,7 +27,7 @@ OpenH264 *OpenH264::_singleton = nullptr;
 
 OpenH264::OpenH264() {
     _singleton = this;
-    _start_background_download();
+    _downloaded = _is_library_cached();
 }
 
 OpenH264::~OpenH264() {
@@ -99,15 +99,40 @@ String OpenH264::_get_license_user_path() const {
     return "user://openh264/BINARY_LICENSE.txt";
 }
 
+bool OpenH264::_is_library_cached() const {
+    return FileAccess::file_exists(_get_lib_user_path());
+}
+
 void OpenH264::_start_background_download() {
+    if (_download_in_progress || _downloaded) {
+        return;
+    }
+    _download_in_progress = true;
     WorkerThreadPool::get_singleton()->add_task(
             Callable(this, "_background_download_task"),
             false,
-            "openh264_load");
+            "openh264_download");
+}
+
+void OpenH264::_start_background_load() {
+    if (_load_in_progress || is_loaded()) {
+        return;
+    }
+    _load_in_progress = true;
+    WorkerThreadPool::get_singleton()->add_task(
+            Callable(this, "_load_library_task"),
+            false,
+            "openh264_load_library");
 }
 
 void OpenH264::_background_download_task() {
     const String lib_path = _get_lib_user_path();
+
+    if (FileAccess::file_exists(lib_path)) {
+        UtilityFunctions::print("[openh264] Library found on disk.");
+        call_deferred("_on_download_complete", (int)OK);
+        return;
+    }
 
     DirAccess::make_dir_recursive_absolute(
             OS::get_singleton()->get_user_data_dir() + "/openh264");
@@ -127,12 +152,6 @@ void OpenH264::_background_download_task() {
         } else {
             UtilityFunctions::printerr("[openh264] License download failed");
         }
-    }
-
-    if (FileAccess::file_exists(lib_path)) {
-        UtilityFunctions::print("[openh264] Library found on disk.");
-        call_deferred("_on_download_complete", (int)OK);
-        return;
     }
 
     UtilityFunctions::print("[openh264] Downloading: ", _get_cdn_url());
@@ -357,31 +376,39 @@ void OpenH264::set_enabled(bool p_enabled) {
         return;
     }
     _enabled = p_enabled;
-    if (_enabled && _downloaded && !is_loaded()) {
-        WorkerThreadPool::get_singleton()->add_task(
-                Callable(this, "_load_library_task"),
-                false,
-                "openh264_load_library");
+
+    if (_enabled) {
+        _downloaded = _is_library_cached();
+        if (_downloaded) {
+            _start_background_load();
+        } else {
+            _start_background_download();
+        }
     } else if (!_enabled && is_loaded()) {
         _unload_library();
     }
 }
 
 void OpenH264::_on_download_complete(int error) {
-    _downloaded = true;
+    _download_in_progress = false;
+    _downloaded = error == OK;
     if (error == OK && _enabled) {
-        WorkerThreadPool::get_singleton()->add_task(
-                Callable(this, "_load_library_task"),
-                false,
-                "openh264_load_library");
+        _start_background_load();
         return;
     }
-    if (error != OK) {
+    if (error != OK && _enabled) {
         emit_signal("library_ready", error);
     }
 }
 
 void OpenH264::_on_library_load_complete(int error) {
+    _load_in_progress = false;
+    if (!_enabled) {
+        if (error == OK) {
+            _unload_library();
+        }
+        return;
+    }
     emit_signal("library_ready", error);
 }
 

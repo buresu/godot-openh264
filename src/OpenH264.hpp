@@ -40,9 +40,11 @@ private:
     static OpenH264 *_singleton;
 
     // Library state
-    bool  _enabled    = false;
-    bool  _downloaded = false;
-    void *_lib_handle = nullptr;
+    bool  _enabled              = false;
+    bool  _downloaded           = false;
+    bool  _download_in_progress = false;
+    bool  _load_in_progress     = false;
+    void *_lib_handle           = nullptr;
 
     FnWelsCreateDecoder  _fn_create_decoder  = nullptr;
     FnWelsDestroyDecoder _fn_destroy_decoder = nullptr;
@@ -56,7 +58,9 @@ private:
     String _get_license_url() const;
     String _get_license_user_path() const;
 
+    bool _is_library_cached() const;
     void _start_background_download();
+    void _start_background_load();
     void _background_download_task();
     void _load_library_task();
 
