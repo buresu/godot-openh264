@@ -124,6 +124,7 @@ jobs:
           cp artifacts/* release/addons/godot-openh264/bin/
           cp demo/addons/godot-openh264/godot-openh264.gdextension release/addons/godot-openh264/
           cp demo/addons/godot-openh264/godot-openh264.gdextension.uid release/addons/godot-openh264/
+          cp -r demo/addons/godot-openh264/shaders release/addons/godot-openh264/
           cd release
           zip -r ../godot-openh264-${{ github.ref_name }}.zip .
 
