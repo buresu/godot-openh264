@@ -99,6 +99,10 @@ String OpenH264::_get_license_user_path() const {
     return "user://openh264/BINARY_LICENSE.txt";
 }
 
+String OpenH264::_globalize_user_path(const String &path) const {
+    return ProjectSettings::get_singleton()->globalize_path(path);
+}
+
 bool OpenH264::_is_library_cached() const {
     return FileAccess::file_exists(_get_lib_user_path());
 }
@@ -129,7 +133,8 @@ void OpenH264::_background_download_task() {
     const String lib_path = _get_lib_user_path();
 
     if (FileAccess::file_exists(lib_path)) {
-        UtilityFunctions::print("[openh264] Library found on disk.");
+        UtilityFunctions::print("[openh264] Library found on disk: ",
+                                _globalize_user_path(lib_path));
         call_deferred("_on_download_complete", (int)OK);
         return;
     }
@@ -147,7 +152,8 @@ void OpenH264::_background_download_task() {
                 lf->store_buffer(license_data);
                 UtilityFunctions::print(
                         "[openh264] OpenH264 Video Codec provided by Cisco Systems, Inc.");
-                UtilityFunctions::print("[openh264] License saved to: ", license_path);
+                UtilityFunctions::print("[openh264] License saved to: ",
+                                        _globalize_user_path(license_path));
             }
         } else {
             UtilityFunctions::printerr("[openh264] License download failed");
@@ -184,8 +190,7 @@ void OpenH264::_background_download_task() {
 
     if (!_verify_md5(so_data, md5_data)) {
         UtilityFunctions::printerr("[openh264] MD5 mismatch — removing corrupted file");
-        DirAccess::remove_absolute(
-                ProjectSettings::get_singleton()->globalize_path(lib_path));
+        DirAccess::remove_absolute(_globalize_user_path(lib_path));
         call_deferred("_on_download_complete", (int)ERR_INVALID_DATA);
         return;
     }
@@ -332,18 +337,19 @@ Error OpenH264::_extract_and_save(const PackedByteArray &bz2_data,
 
     Ref<FileAccess> f = FileAccess::open(dst_path, FileAccess::WRITE);
     if (!f.is_valid()) {
-        UtilityFunctions::printerr("[openh264] Cannot write: ", dst_path);
+        UtilityFunctions::printerr("[openh264] Cannot write: ",
+                                   _globalize_user_path(dst_path));
         return ERR_FILE_CANT_WRITE;
     }
     f->store_buffer(out);
 
-    UtilityFunctions::print("[openh264] Extracted ", (int)out_len, " bytes → ", dst_path);
+    UtilityFunctions::print("[openh264] Extracted ", (int)out_len, " bytes to ",
+                            _globalize_user_path(dst_path));
     return OK;
 }
 
 Error OpenH264::_load_library() {
-    const String lib_path_global =
-            ProjectSettings::get_singleton()->globalize_path(_get_lib_user_path());
+    const String lib_path_global = _globalize_user_path(_get_lib_user_path());
 
 #if defined(_WIN32)
     _lib_handle = static_cast<void *>(LoadLibraryA(lib_path_global.utf8().get_data()));

@@ -58,6 +58,7 @@ private:
     String _get_license_url() const;
     String _get_license_user_path() const;
 
+    String _globalize_user_path(const String &path) const;
     bool _is_library_cached() const;
     void _start_background_download();
     void _start_background_load();
