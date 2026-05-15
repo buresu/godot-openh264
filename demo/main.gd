@@ -52,7 +52,7 @@ func _on_file_dialog_file_selected(path: String) -> void:
 	video_player.play()
 
 	if _use_shader_decode:
-		var shader := load("res://addons/godot-openh264/yuv420_decode.gdshader") as Shader
+		var shader := load("res://addons/godot-openh264/shaders/yuv420_decode.gdshader") as Shader
 		var mat := ShaderMaterial.new()
 		mat.shader = shader
 		video_player.material = mat
